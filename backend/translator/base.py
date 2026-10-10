@@ -8,6 +8,7 @@ and prompt-building logic used by all LLM-based providers.
 
 import json
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from threading import Event
 from typing import Generator
 
@@ -23,6 +24,8 @@ _SYSTEM_PROMPT_TEMPLATE = """You are a professional game translator specializing
 {glossary_section}
 
 {character_context_section}
+
+{update_section}
 
 ## Output Format
 
@@ -156,6 +159,31 @@ def build_character_context_section(ctx: dict | None) -> str:
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class Revision:
+    """Baseline for revising one changed row.
+
+    Attributes:
+        old_source: The original text the previous translation was made from, or `None` when it was not recorded.
+        previous_translation: The translation to revise.
+    """
+
+    old_source: str | None
+    previous_translation: str
+
+
+# System prompt section added when `TranslationProvider.revisions` is set. Formatted with `source_lang` and `target_lang`.
+UPDATE_RULES_SECTION = """## Update Mode
+
+The strings below were already translated, but the original {source_lang} text has since changed.
+For each key you are given the old original text (when known), the new original text, and the previous {target_lang} translation.
+
+1. Use the previous translation as the base. Change only what the difference between the old and new original requires.
+2. Keep the wording, tone, glossary terms, and formatting tags of the previous translation wherever they still fit the new original.
+3. If the new original is unrelated to the old one, translate it fresh.
+4. Return the full revised translation for every key, not just the changed part."""
+
+
 class TranslationProvider(ABC):
     """
     Abstract translation provider interface.
@@ -209,6 +237,9 @@ class TranslationProvider(ABC):
         """
         ...
 
+    # Baselines for update mode, keyed by localization key. When set, `build_prompt` revises these translations instead of translating from scratch.
+    revisions: dict[str, Revision] | None = None
+
     def build_prompt(
         self,
         entries: list[tuple[str, str]],
@@ -234,10 +265,14 @@ class TranslationProvider(ABC):
                 `"character_name"`, `"source_game"`, and `"background"`.
             target_lang: Name of the target language (e.g., `"English"`, `"Chinese"`).
 
+        When `self.revisions` is set the prompts switch to update mode.
+
         Returns:
             A tuple of (system_prompt, user_message).
         """
         glossary_section = glossary_prompt if glossary_prompt else "No glossary available."
+        revisions = self.revisions
+        update_section = UPDATE_RULES_SECTION.format(source_lang=source_lang, target_lang=target_lang) if revisions else ""
         rules = format_rules or []
         format_rules_section = "\n".join(f"{i+1}. **{rule}**" for i, rule in enumerate(rules)) if rules else ""
         style_examples_section = build_style_examples_section(style_examples or {})
@@ -251,16 +286,31 @@ class TranslationProvider(ABC):
             style_examples_section=style_examples_section,
             glossary_section=glossary_section,
             character_context_section=character_context_section,
+            update_section=update_section,
             output_format_section=self.output_format_template.format(source_lang=source_lang),
         )
         # Collapse runs of blank lines left by empty template sections.
         while "\n\n\n" in system_prompt:
             system_prompt = system_prompt.replace("\n\n\n", "\n\n")
 
-        user_lines = [f"Translate the following {source_lang} strings to {target_lang}:\n"]
-        for key, source_text in entries:
-            escaped = source_text.replace("\n", "\\n")
-            user_lines.append(f"**{key}**: {escaped}")
+        def esc(text: str) -> str:
+            return text.replace("\n", "\\n")
+
+        if revisions:
+            user_lines = [f"Revise the following {target_lang} translations to match the updated {source_lang} text:\n"]
+            for key, source_text in entries:
+                user_lines.append(f"**{key}**")
+                rev = revisions.get(key)
+                if rev is not None and rev.old_source is not None:
+                    user_lines.append(f"Old original: {esc(rev.old_source)}")
+                user_lines.append(f"New original: {esc(source_text)}")
+                if rev is not None:
+                    user_lines.append(f"Previous translation: {esc(rev.previous_translation)}")
+                user_lines.append("")
+        else:
+            user_lines = [f"Translate the following {source_lang} strings to {target_lang}:\n"]
+            for key, source_text in entries:
+                user_lines.append(f"**{key}**: {esc(source_text)}")
         user_lines.append('\nReturn a JSON object with "translations" and "suggested_terms".')
         user_message = "\n".join(user_lines)
 
