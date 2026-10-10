@@ -8,6 +8,10 @@ describe("canonicalRowStyle", () => {
         expect(canonicalRowStyle("pending", { override: true })).toEqual({ backgroundColor: "rgba(255, 220, 40, 0.15)" })
     })
 
+    it("tints changed rows orange", () => {
+        expect(canonicalRowStyle("changed")).toEqual({ backgroundColor: "rgba(249, 115, 22, 0.1)" })
+    })
+
     it("returns undefined for plain missing/untouched rows", () => {
         expect(canonicalRowStyle("missing")).toBeUndefined()
         expect(canonicalRowStyle("untouched")).toBeUndefined()

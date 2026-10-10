@@ -18,7 +18,7 @@ const MOD: WH3TranslationModSummary = {
 const SUMMARY: WH3RescanSummary = {
     mod_id: MOD.workshop_id,
     counts: { translated: 5, untranslated: 3, stale: 1, orphan: 0 },
-    canonical_counts: { synced: 5, untouched: 0, pending: 1, missing: 3, untranslatable: 0 },
+    canonical_counts: { synced: 5, untouched: 0, pending: 1, changed: 0, missing: 3, untranslatable: 0 },
     scanned_at: "2026-05-25T00:00:00Z",
     has_unsynced_changes: false,
     has_mod_context: false,
@@ -36,7 +36,7 @@ const STRINGS: WH3DriftRow[] = [
         previous_text: "Original 1",
     },
     { source_filename: "units.loc.tsv", key: "k2", parent_text: "原二", translation_text: null, status: "untranslated", provider: null, canonical_status: "missing", previous_text: null },
-    { source_filename: "units.loc.tsv", key: "k3", parent_text: "原三", translation_text: "Stale text", status: "stale", provider: "claude", canonical_status: "pending", previous_text: "Old Stale" },
+    { source_filename: "units.loc.tsv", key: "k3", parent_text: "原三", translation_text: "Stale text", status: "stale", provider: "claude", canonical_status: "changed", previous_text: "Old Stale" },
 ]
 
 const PREVIEW = {

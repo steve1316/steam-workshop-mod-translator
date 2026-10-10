@@ -447,9 +447,9 @@ def rescan(mod_id: str) -> RescanSummary:
             continue
         counts[row.status] += 1
 
-    # Canonical five-state tally for the shared status pills. Zero-filled so the dict always carries every state, matching Chrono Ark. Orphan rows are
+    # Canonical six-state tally for the shared status pills. Zero-filled so the dict always carries every state, matching Chrono Ark. Orphan rows are
     # excluded so the counts match the orphan-free strings table.
-    canonical_counts: dict[str, int] = {"synced": 0, "untouched": 0, "pending": 0, "missing": 0, "untranslatable": 0}
+    canonical_counts: dict[str, int] = {"synced": 0, "untouched": 0, "pending": 0, "changed": 0, "missing": 0, "untranslatable": 0}
     for srow in to_status_rows([d for d in drift if d.status != "orphan"], raw_translations):
         canonical_counts[srow.status] += 1
 

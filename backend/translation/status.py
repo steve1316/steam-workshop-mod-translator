@@ -11,7 +11,7 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel
 
-RowStatus = Literal["synced", "untouched", "pending", "missing", "untranslatable"]
+RowStatus = Literal["synced", "untouched", "pending", "changed", "missing", "untranslatable"]
 
 
 def classify_status(
@@ -22,13 +22,12 @@ def classify_status(
     is_untouched: bool = False,
     source_changed: bool = False,
 ) -> RowStatus:
-    """Map a row's building-block flags to the canonical five-state status.
+    """Map a row's building-block flags to the canonical six-state status.
 
     Rules, in priority order:
     1. An untranslatable_reason always wins -> 'untranslatable'.
     2. A translated row whose source text drifted since it was last synced or
-       translated drops back to 'pending' for re-review. This is a shared rule for
-       every game (WH3 'stale' folds in here).
+       translated is 'changed' and needs re-review or an update. This is a shared rule for every game (WH3 'stale' folds in here).
     3. A synced row with no source drift -> 'synced'.
     4. A row whose target text shipped with the mod and was never edited -> 'untouched'.
     5. Any other row that has a translation -> 'pending'.
@@ -45,12 +44,12 @@ def classify_status(
         source_changed: True when the source text drifted since the last sync/translate.
 
     Returns:
-        One of 'synced', 'untouched', 'pending', 'missing', 'untranslatable'.
+        One of 'synced', 'untouched', 'pending', 'changed', 'missing', 'untranslatable'.
     """
     if untranslatable_reason:
         return "untranslatable"
     if has_translation and source_changed:
-        return "pending"
+        return "changed"
     if is_synced:
         return "synced"
     if is_untouched:

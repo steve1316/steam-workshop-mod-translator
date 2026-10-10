@@ -134,17 +134,17 @@ def test_rescan_counts_cleared_keys_as_untranslated(client: TestClient, tmp_path
 
 
 def test_rescan_emits_canonical_counts_matching_strings_view(client: TestClient, tmp_path: Path):
-    """Rescan returns a zero-filled five-state `canonical_counts` dict that tallies the per-row `canonical_status` from the strings view exactly.
+    """Rescan returns a zero-filled six-state `canonical_counts` dict that tallies the per-row `canonical_status` from the strings view exactly.
 
     This is the rescan-side mirror of the `canonical_status` field on each strings row. The frontend's status pills read these counts, so they must agree
-    with the rows the table shows. The dict always carries all five canonical states (zero-filled) for a stable contract matching Chrono Ark.
+    with the rows the table shows. The dict always carries all six canonical states (zero-filled) for a stable contract matching Chrono Ark.
     """
     mod_id = "3315737452"
     summary = client.post(f"/api/games/total_war_warhammer_3/translation/mods/{mod_id}/rescan").json()
     rows = client.get(f"/api/games/total_war_warhammer_3/translation/mods/{mod_id}/strings").json()
 
     cc = summary["canonical_counts"]
-    assert set(cc.keys()) == {"synced", "untouched", "pending", "missing", "untranslatable"}
+    assert set(cc.keys()) == {"synced", "untouched", "pending", "changed", "missing", "untranslatable"}
 
     tally = Counter(r["canonical_status"] for r in rows)
     for state in cc:
@@ -548,7 +548,7 @@ def test_sync_rebaselines_parent_snapshot_clearing_stale(client: TestClient, tmp
     (mod_dir / "parent_snapshot.json").write_text(json.dumps({"units.loc.tsv": {"k1": "0" * 64}}), encoding="utf-8")
 
     before = client.get(f"/api/games/total_war_warhammer_3/translation/mods/{mod_id}/strings").json()
-    assert next(r for r in before if r["key"] == "k1")["canonical_status"] == "pending"
+    assert next(r for r in before if r["key"] == "k1")["canonical_status"] == "changed"
 
     resp = client.post(f"/api/games/total_war_warhammer_3/translation/mods/{mod_id}/sync")
     assert resp.status_code == 200

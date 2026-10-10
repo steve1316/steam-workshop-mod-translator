@@ -35,9 +35,9 @@ def test_translated_on_disk_with_no_override_is_synced():
     assert rows[0].provider == "manual"
 
 
-def test_stale_maps_to_pending():
+def test_stale_maps_to_changed():
     rows = to_status_rows([_drift("k", "src-new", "Hello", "stale")], {})
-    assert rows[0].status == "pending"
+    assert rows[0].status == "changed"
 
 
 def test_override_differing_from_disk_is_pending():

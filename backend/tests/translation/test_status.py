@@ -7,9 +7,17 @@ def test_untranslatable_reason_wins_over_everything():
     assert classify_status(untranslatable_reason="machine code", has_translation=True, is_synced=True) == "untranslatable"
 
 
-def test_source_drift_demotes_a_synced_row_to_pending():
+def test_source_drift_demotes_a_synced_row_to_changed():
     # The shared rule: a translated row whose source changed needs re-review, even if it was synced.
-    assert classify_status(has_translation=True, is_synced=True, source_changed=True) == "pending"
+    assert classify_status(has_translation=True, is_synced=True, source_changed=True) == "changed"
+
+
+def test_source_drift_wins_over_an_unsynced_edit():
+    assert classify_status(has_translation=True, is_synced=False, source_changed=True) == "changed"
+
+
+def test_untranslatable_wins_over_source_drift():
+    assert classify_status(untranslatable_reason="blank", has_translation=True, source_changed=True) == "untranslatable"
 
 
 def test_synced_with_no_drift_is_synced():
@@ -69,6 +77,6 @@ def test_status_row_serializes_all_fields():
     }
 
 
-def test_row_status_is_the_five_canonical_states():
+def test_row_status_is_the_six_canonical_states():
     # Guards against accidental drift of the canonical vocabulary.
-    assert set(RowStatus.__args__) == {"synced", "untouched", "pending", "missing", "untranslatable"}
+    assert set(RowStatus.__args__) == {"synced", "untouched", "pending", "changed", "missing", "untranslatable"}

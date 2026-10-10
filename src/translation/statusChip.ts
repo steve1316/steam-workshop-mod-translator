@@ -13,6 +13,7 @@ const CHIPS: Record<RowStatus, StatusChip> = {
     synced: { label: "SYNCED", className: "status-synced" },
     untouched: { label: "UNTOUCHED", className: "status-untouched" },
     pending: { label: "PENDING", className: "status-translated" },
+    changed: { label: "CHANGED", className: "status-changed" },
     missing: { label: "MISSING", className: "status-missing" },
     untranslatable: { label: "N/A", className: "status-untranslatable" },
 }

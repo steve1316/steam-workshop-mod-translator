@@ -1,6 +1,6 @@
 import type { LocString } from "../shared_types"
 
-export type RowStatus = "synced" | "untouched" | "pending" | "missing" | "untranslatable"
+export type RowStatus = "synced" | "untouched" | "pending" | "changed" | "missing" | "untranslatable"
 
 export type FilterTab = "all" | "missing" | "untouched" | "pending" | "synced"
 
