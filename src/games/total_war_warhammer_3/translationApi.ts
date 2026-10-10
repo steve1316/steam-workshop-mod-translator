@@ -145,14 +145,29 @@ export async function translateBatch(workshopId: string, keys: string[]): Promis
  *
  * @param workshopId Steam Workshop ID of the translation mod.
  * @param provider Optional provider override (defaults to the server's configured provider).
- * @param scope `"all"` (default) previews every untranslated row; `"names"` previews only name strings for the Translate-Names-first pass.
+ * @param scope `"all"` (default) previews every untranslated row; `"names"` previews only name strings for the Translate-Names-first pass,
+ * `"changed"` previews only changed rows for Update Changed.
  * @returns The preview payload, including `batch_plan`. When nothing is untranslated, `total_strings` is 0.
  * @throws `RegistryError` On any non-2xx response.
  */
-export async function previewTranslation(workshopId: string, provider?: string, scope: "all" | "names" = "all"): Promise<WH3TranslationPreview> {
+export async function previewTranslation(workshopId: string, provider?: string, scope: "all" | "names" | "changed" = "all"): Promise<WH3TranslationPreview> {
     const res = await api.post("/translate/preview", { mod_id: workshopId, provider, scope })
     if (!res.ok) throw await registryError(res)
     return res.json()
+}
+
+/**
+ * Accept the current source text as the baseline for changed rows, keeping their translations.
+ *
+ * @param workshopId Steam Workshop ID of the translation mod.
+ * @param keys Keys to accept. Leave out to accept every changed row.
+ * @returns How many rows were accepted.
+ * @throws `RegistryError` On any non-2xx response.
+ */
+export async function acceptChanged(workshopId: string, keys?: string[]): Promise<number> {
+    const res = await api.post(`/translation/mods/${encodeURIComponent(workshopId)}/accept-changed`, { keys: keys ?? null })
+    if (!res.ok) throw await registryError(res)
+    return (await res.json()).accepted
 }
 
 /**

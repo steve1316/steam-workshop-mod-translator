@@ -36,6 +36,7 @@ import {
     openModFolder,
     openSourceFile,
     previewTranslation,
+    acceptChanged,
     rescanMod,
     saveModContext,
     saveString,
@@ -45,12 +46,13 @@ import {
 } from "../../translationApi"
 import { useConfirm } from "../../../../ui/useConfirm"
 
-// Canonical status filter pills, identical to Chrono Ark. WH3 never emits "untouched", but the pill set matches for 1-to-1 parity.
+// Canonical status filter pills. WH3 never emits "untouched", but the pill is kept for parity with Chrono Ark.
 const STATUS_FILTERS: Array<{ value: RowStatus | "all"; label: string }> = [
     { value: "all", label: "All" },
     { value: "missing", label: "Missing" },
     { value: "untouched", label: "Untouched" },
     { value: "pending", label: "Pending" },
+    { value: "changed", label: "Changed" },
     { value: "synced", label: "Synced" },
 ]
 
@@ -145,7 +147,7 @@ const TranslationDetailsPage: React.FC = () => {
     // Translate Names runs one stage at a time. pendingScope drives the confirm-modal title. namesRunRef holds the active run (read in the batch effect,
     // not a dependency, so advancing it does not re-fire the effect). stageReview is the review for the stage that just finished, and pausedStep is a
     // finished stage whose review was closed. nameReviewSuggestions opens the Suggest from Translated Names review.
-    const [pendingScope, setPendingScope] = useState<"all" | "names">("all")
+    const [pendingScope, setPendingScope] = useState<"all" | "names" | "changed">("all")
     const namesRunRef = useRef<NamesRun | null>(null)
     const [stageReview, setStageReview] = useState<{ step: StageStep; suggestions: TermSuggestion[] } | null>(null)
     const [pausedStep, setPausedStep] = useState<StageStep | null>(null)
@@ -309,6 +311,36 @@ const TranslationDetailsPage: React.FC = () => {
         [workshopId, activeProvider]
     )
 
+    // Update Changed previews only the changed rows and revises their previous translations.
+    const handleUpdateChangedClick = useCallback(
+        async (provider?: string) => {
+            const p = provider || activeProvider
+            setPendingProvider(p)
+            setPendingScope("changed")
+            try {
+                const pv = await previewTranslation(workshopId, p, "changed")
+                if (pv.total_strings === 0) {
+                    setBanner({ type: "success", message: pv.message || "No changed strings to update." })
+                    return
+                }
+                setPreview(pv)
+            } catch (e) {
+                setBanner({ type: "error", message: `Update preview failed: ${(e as Error).message}` })
+            }
+        },
+        [workshopId, activeProvider]
+    )
+
+    const onAcceptChanged = useCallback(async () => {
+        try {
+            const n = await acceptChanged(workshopId)
+            setBanner({ type: "success", message: `Accepted ${n} changed string${n === 1 ? "" : "s"}.` })
+            await reloadAfterRename()
+        } catch (e) {
+            setBanner({ type: "error", message: `Accept failed: ${(e as Error).message}` })
+        }
+    }, [workshopId, reloadAfterRename])
+
     const onConfirmTranslate = useCallback(() => {
         if (!preview) return
         const provider = pendingProvider || activeProvider
@@ -320,7 +352,7 @@ const TranslationDetailsPage: React.FC = () => {
             startTranslation(provider, stages[0].batch_plan)
         } else {
             namesRunRef.current = null
-            startTranslation(provider, preview.batch_plan ?? [])
+            startTranslation(provider, preview.batch_plan ?? [], pendingScope === "changed" ? "update" : "translate")
         }
     }, [preview, pendingProvider, pendingScope, activeProvider, startTranslation])
 
@@ -538,9 +570,10 @@ const TranslationDetailsPage: React.FC = () => {
     }, [filteredRows, sortConfig])
 
     const translateCount = useMemo(() => progress?.counts.untranslated ?? 0, [progress])
+    const changedCount = useMemo(() => progress?.canonical_counts.changed ?? 0, [progress])
     // Counted from the table rows so each translated batch shows up right away. Done = synced + pending + untouched, total adds missing.
     const done = useMemo(() => strings.filter((r) => r.canonical_status === "synced" || r.canonical_status === "pending" || r.canonical_status === "untouched").length, [strings])
-    const total = useMemo(() => done + strings.filter((r) => r.canonical_status === "missing").length, [strings, done])
+    const total = useMemo(() => done + strings.filter((r) => r.canonical_status === "missing" || r.canonical_status === "changed").length, [strings, done])
 
     const sourceLang = modContext.source_language_override ?? mod?.source_language ?? "Chinese"
     const targetLang = sourceLang === "English" ? (modContext.target_language_override ?? mod?.target_language ?? "Chinese") : "English"
@@ -616,15 +649,26 @@ const TranslationDetailsPage: React.FC = () => {
             reset={{ onClick: () => setOpenModal("reset") }}
             clearEnglish={{ onClick: onClearEnglish }}
             extraActions={
-                <SplitButton
-                    variant="outline"
-                    label="Translate Names"
-                    onClick={() => handleTranslateNamesClick()}
-                    disabled={isTranslating || translateCount === 0}
-                    menuDisabled={isTranslating}
-                    menuLabel="Translate Names menu"
-                    items={[{ label: "Suggest from Translated Names", onSelect: onSuggestFromNames }]}
-                />
+                <>
+                    <SplitButton
+                        variant="outline"
+                        label={`Update Changed (${changedCount})`}
+                        onClick={() => handleUpdateChangedClick()}
+                        disabled={isTranslating || changedCount === 0}
+                        menuDisabled={isTranslating || changedCount === 0}
+                        menuLabel="Update Changed menu"
+                        items={[{ label: "Accept All Changed", onSelect: onAcceptChanged }]}
+                    />
+                    <SplitButton
+                        variant="outline"
+                        label="Translate Names"
+                        onClick={() => handleTranslateNamesClick()}
+                        disabled={isTranslating || translateCount === 0}
+                        menuDisabled={isTranslating}
+                        menuLabel="Translate Names menu"
+                        items={[{ label: "Suggest from Translated Names", onSelect: onSuggestFromNames }]}
+                    />
+                </>
             }
             translate={
                 <SplitButton
@@ -662,7 +706,14 @@ const TranslationDetailsPage: React.FC = () => {
             {(openModal === "history" || openModal === "reset") && (
                 <HistoryModal workshopId={workshopId} onClose={() => setOpenModal(null)} defaultRestoreMode={openModal === "reset"} onRestored={onRestored} />
             )}
-            {preview && <TranslationConfirmModal preview={preview} title={pendingScope === "names" ? "Translate Names" : undefined} onConfirm={onConfirmTranslate} onCancel={() => setPreview(null)} />}
+            {preview && (
+                <TranslationConfirmModal
+                    preview={preview}
+                    title={pendingScope === "names" ? "Translate Names" : pendingScope === "changed" ? "Update Changed" : undefined}
+                    onConfirm={onConfirmTranslate}
+                    onCancel={() => setPreview(null)}
+                />
+            )}
 
             {/* Review of the names stage that just finished. Continue starts the next stage, and closing pauses the run. */}
             {stageReview && (

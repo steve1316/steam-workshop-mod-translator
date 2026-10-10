@@ -18,7 +18,7 @@ const MOD: WH3TranslationModSummary = {
 const SUMMARY: WH3RescanSummary = {
     mod_id: MOD.workshop_id,
     counts: { translated: 5, untranslated: 3, stale: 1, orphan: 0 },
-    canonical_counts: { synced: 5, untouched: 0, pending: 1, changed: 0, missing: 3, untranslatable: 0 },
+    canonical_counts: { synced: 5, untouched: 0, pending: 0, changed: 1, missing: 3, untranslatable: 0 },
     scanned_at: "2026-05-25T00:00:00Z",
     has_unsynced_changes: false,
     has_mod_context: false,
@@ -263,8 +263,8 @@ describe("TranslationDetails (Plan 3 layout)", () => {
 
     it("renders the inline 'X / Y total strings translated' counter", async () => {
         render(wrap())
-        // Counted from the table rows: synced k1 + pending k3 are done, missing k2 is not.
-        await waitFor(() => expect(screen.getByText(/2\s*\/\s*3\s*total strings translated/i)).toBeInTheDocument())
+        // Counted from the table rows: synced k1 is done, changed k3 and missing k2 are not.
+        await waitFor(() => expect(screen.getByText(/1\s*\/\s*3\s*total strings translated/i)).toBeInTheDocument())
     })
 
     it("updates the counter after each batch while the translation is still running", async () => {
@@ -298,10 +298,10 @@ describe("TranslationDetails (Plan 3 layout)", () => {
         })
 
         render(wrap())
-        await waitFor(() => expect(screen.getByText(/2\s*\/\s*4\s*total strings translated/i)).toBeInTheDocument())
+        await waitFor(() => expect(screen.getByText(/1\s*\/\s*4\s*total strings translated/i)).toBeInTheDocument())
         fireEvent.click(await screen.findByRole("button", { name: /^Translate \(Claude\)/i }))
         fireEvent.click(await screen.findByRole("button", { name: /^Translate \d+ strings?$/i }))
-        await waitFor(() => expect(screen.getByText(/3\s*\/\s*4\s*total strings translated/i)).toBeInTheDocument())
+        await waitFor(() => expect(screen.getByText(/2\s*\/\s*4\s*total strings translated/i)).toBeInTheDocument())
         expect(screen.getByText(/Translating batch/i)).toBeInTheDocument()
     })
 
@@ -424,10 +424,10 @@ describe("TranslationDetails (Plan 3 layout)", () => {
         await waitFor(() => expect(screen.getByRole("button", { name: /^Missing$/i })).toHaveClass("btn-primary"))
     })
 
-    it("renders the canonical status filter pills (All / Missing / Untouched / Pending / Synced)", async () => {
+    it("renders the canonical status filter pills (All / Missing / Untouched / Pending / Changed / Synced)", async () => {
         render(wrap())
         await screen.findByRole("button", { name: /^All$/i })
-        for (const label of ["All", "Missing", "Untouched", "Pending", "Synced"]) {
+        for (const label of ["All", "Missing", "Untouched", "Pending", "Changed", "Synced"]) {
             expect(screen.getByRole("button", { name: new RegExp(`^${label}$`, "i") })).toBeInTheDocument()
         }
     })
@@ -459,6 +459,48 @@ describe("TranslationDetails (Plan 3 layout)", () => {
         resolveBatch(mockJson({ status: "success", translated: 1, translations: { k2: "x" }, suggestions: [] }))
     })
 
+    it("shows a CHANGED badge and a Changed filter pill", async () => {
+        render(wrap())
+        await waitFor(() => screen.getByRole("button", { name: /Mod Glossary/i }))
+        expect(await screen.findByText("CHANGED")).toBeInTheDocument()
+        expect(screen.getByRole("button", { name: /^Changed$/ })).toBeInTheDocument()
+    })
+
+    it("enables Update Changed with the changed count and previews with scope changed", async () => {
+        const spy = vi.spyOn(globalThis, "fetch")
+        const base = spy.getMockImplementation()!
+        spy.mockImplementation(async (input, init) => (String(input).endsWith("/translate/preview") ? mockJson(PREVIEW) : base(input, init)))
+        render(wrap())
+        const button = await screen.findByRole("button", { name: /Update Changed \(1\)/ })
+        expect(button).toBeEnabled()
+        await act(async () => {
+            fireEvent.click(button)
+        })
+        const call = spy.mock.calls.find(([u]) => String(u).endsWith("/translate/preview"))!
+        expect(JSON.parse(String((call[1] as RequestInit).body)).scope).toBe("changed")
+    })
+
+    it("disables Update Changed when nothing is changed", async () => {
+        const spy = vi.spyOn(globalThis, "fetch")
+        const base = spy.getMockImplementation()!
+        spy.mockImplementation(async (input, init) => (String(input).endsWith("/rescan") ? mockJson({ ...SUMMARY, canonical_counts: { ...SUMMARY.canonical_counts, changed: 0 } }) : base(input, init)))
+        render(wrap())
+        expect(await screen.findByRole("button", { name: /Update Changed \(0\)/ })).toBeDisabled()
+    })
+
+    it("POSTs to /accept-changed from the Update Changed menu", async () => {
+        const spy = vi.spyOn(globalThis, "fetch")
+        render(wrap())
+        await screen.findByRole("button", { name: /Update Changed \(1\)/ })
+        await act(async () => {
+            fireEvent.click(screen.getByRole("button", { name: "Update Changed menu" }))
+        })
+        await act(async () => {
+            fireEvent.click(await screen.findByText("Accept All Changed"))
+        })
+        await waitFor(() => expect(spy.mock.calls.some(([u]) => String(u).endsWith("/accept-changed"))).toBe(true))
+    })
+
     it("wraps the table inside .string-table-container glass-card", async () => {
         const { container } = render(wrap())
         await screen.findByRole("button", { name: /Back to Dashboard/i })
@@ -466,12 +508,12 @@ describe("TranslationDetails (Plan 3 layout)", () => {
         expect(container.querySelector(".string-table-container table")).not.toBeNull()
     })
 
-    it("renders Status column with canonical SYNCED / MISSING / PENDING badge text", async () => {
+    it("renders Status column with canonical SYNCED / MISSING / CHANGED badge text", async () => {
         render(wrap())
         await screen.findByText("Original 1")
         expect(screen.getByText("SYNCED")).toBeInTheDocument()
         expect(screen.getByText("MISSING")).toBeInTheDocument()
-        expect(screen.getByText("PENDING")).toBeInTheDocument()
+        expect(screen.getByText("CHANGED")).toBeInTheDocument()
     })
 
     it("clicking a column header cycles sort direction null -> asc -> desc -> null", async () => {

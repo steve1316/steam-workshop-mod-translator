@@ -39,7 +39,7 @@ const STOP_AFTER_PROVIDERS = new Set(["llamacpp"])
  * between batches.
  *
  * The frontend drives the loop:
- * 1. Call `startTranslation` with a provider and the batch plan from preview.
+ * 1. Call `startTranslation` with a provider and the batch plan from preview. An optional `mode` of `"update"` revises changed rows.
  * 2. The hook translates one batch at a time via `POST /api/translate/batch`.
  * 3. After each batch, if suggestions exist and it's not the last batch,
  *    the state transitions to "reviewing" so the user can accept/dismiss terms.
@@ -60,6 +60,7 @@ export function useIterativeTranslation(
 
     const planRef = useRef<BatchDescriptor[]>([])
     const providerRef = useRef<string>("")
+    const modeRef = useRef<"translate" | "update">("translate")
     const cancelledRef = useRef(false)
     const abortControllerRef = useRef<AbortController | null>(null)
     const totalTranslatedRef = useRef(0)
@@ -208,6 +209,7 @@ export function useIterativeTranslation(
             try {
                 const res = await gameApi(gameId).post("/translate/batch", {
                     mod_id: modId,
+                    mode: modeRef.current,
                     provider: providerRef.current,
                     keys: batch.keys,
                     source_lang: batch.source_lang,
@@ -248,9 +250,10 @@ export function useIterativeTranslation(
     translateBatchRef.current = translateBatch
 
     const startTranslation = useCallback(
-        (provider: string, batchPlan: BatchDescriptor[]) => {
+        (provider: string, batchPlan: BatchDescriptor[], mode: "translate" | "update" = "translate") => {
             planRef.current = batchPlan
             providerRef.current = provider
+            modeRef.current = mode
             cancelledRef.current = false
             totalTranslatedRef.current = 0
             setBatchTranslations({})
