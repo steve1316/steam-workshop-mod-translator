@@ -118,6 +118,21 @@ describe("TranslationModCard", () => {
         expect(formatStat).toHaveTextContent("LOC")
     })
 
+    it("counts changed strings as not done but part of the total", () => {
+        const progress: WH3RescanSummary = {
+            mod_id: MOD.workshop_id,
+            counts: { translated: 100, untranslated: 0, stale: 10, orphan: 0 },
+            canonical_counts: { synced: 90, untouched: 0, pending: 0, changed: 10, missing: 0, untranslatable: 0 },
+            scanned_at: "2026-05-24T00:00:00Z",
+            has_unsynced_changes: false,
+            has_mod_context: false,
+        }
+        render(wrap(<TranslationModCard mod={MOD} progress={progress} onRescan={vi.fn()} />))
+        expect(screen.getByText(/90\s*\/\s*100\s*strings/)).toBeInTheDocument()
+        expect(screen.queryByText(/100%/)).not.toBeInTheDocument()
+        expect(screen.getByText("Remaining").previousElementSibling).toHaveTextContent("10")
+    })
+
     it("renders the View and Publish buttons (not 'Translate ->')", () => {
         render(wrap(<TranslationModCard mod={MOD} progress={null} onRescan={vi.fn()} />))
         expect(screen.getByRole("button", { name: "View" })).toBeInTheDocument()
