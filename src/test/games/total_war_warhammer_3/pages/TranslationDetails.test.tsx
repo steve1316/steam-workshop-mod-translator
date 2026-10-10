@@ -498,6 +498,9 @@ describe("TranslationDetails (Plan 3 layout)", () => {
         await act(async () => {
             fireEvent.click(await screen.findByText("Accept All Changed"))
         })
+        await act(async () => {
+            fireEvent.click(within(await screen.findByRole("dialog", { name: "Accept All Changed" })).getByRole("button", { name: "Accept" }))
+        })
         await waitFor(() => expect(spy.mock.calls.some(([u]) => String(u).endsWith("/accept-changed"))).toBe(true))
     })
 

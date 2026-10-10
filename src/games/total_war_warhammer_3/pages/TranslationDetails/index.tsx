@@ -332,6 +332,12 @@ const TranslationDetailsPage: React.FC = () => {
     )
 
     const onAcceptChanged = useCallback(async () => {
+        const ok = await confirm({
+            title: "Accept All Changed",
+            message: "Accept the current source text for all changed strings? Their translations stay as they are.",
+            confirmLabel: "Accept",
+        })
+        if (!ok) return
         try {
             const n = await acceptChanged(workshopId)
             setBanner({ type: "success", message: `Accepted ${n} changed string${n === 1 ? "" : "s"}.` })
@@ -339,7 +345,7 @@ const TranslationDetailsPage: React.FC = () => {
         } catch (e) {
             setBanner({ type: "error", message: `Accept failed: ${(e as Error).message}` })
         }
-    }, [workshopId, reloadAfterRename])
+    }, [workshopId, reloadAfterRename, confirm])
 
     const onConfirmTranslate = useCallback(() => {
         if (!preview) return
