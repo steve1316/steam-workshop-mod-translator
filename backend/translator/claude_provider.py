@@ -17,7 +17,7 @@ CLAUDE_MODELS: dict[str, dict] = {
     "claude-opus-5": {"label": "Claude Opus 5", "input_per_mtok": 5.0, "output_per_mtok": 25.0},
     "claude-sonnet-5": {"label": "Claude Sonnet 5", "input_per_mtok": 2.0, "output_per_mtok": 10.0},
     "claude-sonnet-4-6": {"label": "Claude Sonnet 4.6", "input_per_mtok": 3.0, "output_per_mtok": 15.0},
-    "claude-haiku-4-5": {"label": "Claude Haiku 4.5", "input_per_mtok": 1.0, "output_per_mtok": 5.0},
+    "claude-haiku-5-5": {"label": "Claude Haiku 5.5", "input_per_mtok": 0.1, "output_per_mtok": 0.5},
 }
 
 _DEFAULT_PRICING = CLAUDE_MODELS["claude-sonnet-5"]

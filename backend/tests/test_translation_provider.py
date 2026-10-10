@@ -148,7 +148,7 @@ def test_claude_models_lists_current_models_with_pricing():
         "claude-opus-5": (5.0, 25.0),
         "claude-sonnet-5": (2.0, 10.0),
         "claude-sonnet-4-6": (3.0, 15.0),
-        "claude-haiku-4-5": (1.0, 5.0),
+        "claude-haiku-5-5": (0.1, 0.5),
     }
 
 
@@ -180,7 +180,7 @@ def test_translate_batch_uses_low_effort_for_opus_5_models(monkeypatch):
 
 def test_translate_batch_sends_only_the_output_format_for_older_models(monkeypatch):
     text = json.dumps({"translations": {"k1": "Test"}, "suggested_terms": []})
-    for model in ("claude-sonnet-4-6", "claude-haiku-4-5"):
+    for model in ("claude-sonnet-4-6", "claude-haiku-5-5"):
         _run_batch(monkeypatch, model, [_Block("text", text=text)])
         assert list(_FakeAnthropic.last_kwargs["extra_body"]) == ["output_config"]
         assert list(_FakeAnthropic.last_kwargs["extra_body"]["output_config"]) == ["format"]
