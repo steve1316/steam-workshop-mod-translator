@@ -134,12 +134,12 @@ def load_parent_snapshot(mod_id: str) -> dict[str, dict[str, dict]]:
     return {fn: {k: (v if isinstance(v, dict) else {"hash": v, "text": None}) for k, v in entries.items()} for fn, entries in raw.items()}
 
 
-def save_parent_snapshot(mod_id: str, snapshot: dict[str, dict[str, str]]) -> None:
+def save_parent_snapshot(mod_id: str, snapshot: dict[str, dict[str, dict]]) -> None:
     """Persist the parent-text-hash snapshot for the WH3 mod.
 
     Args:
         mod_id: The mod identifier.
-        snapshot: Dictionary mapping filenames to dicts of key/hash pairs.
+        snapshot: Dictionary mapping filenames to dicts of key to `{hash, text}` entry dicts.
     """
     path = _root() / "mods" / mod_id / "parent_snapshot.json"
     path.parent.mkdir(parents=True, exist_ok=True)

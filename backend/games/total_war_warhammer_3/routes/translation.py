@@ -52,10 +52,10 @@ from backend.games.total_war_warhammer_3.loc_tsv_packer import (
 )
 from backend.games.total_war_warhammer_3.loc_tsv_writeback import _find_existing_user_file, remove_keys_from_loc_tsv, sync_translations_to_loc_tsv
 from backend.games.total_war_warhammer_3.routes._paths import tw3_workshop_content_dir
+from backend.games.total_war_warhammer_3.source_snapshot import accept_keys, refresh_unchanged
 from backend.games.total_war_warhammer_3.translation_drift import (
     DriftRow,
     compute_drift,
-    hash_text,
 )
 from backend.games.total_war_warhammer_3.translation_mods import (
     WH3_TRANSLATION_MODS,
@@ -426,16 +426,8 @@ def rescan(mod_id: str) -> RescanSummary:
 
     drift = compute_drift(parent=parent, translation=translation, snapshot=snapshot)
 
-    # Initialize snapshot for never-before-seen keys so they show as
-    # untranslated rather than stale on future scans.
-    next_snapshot = {fn: dict(d) for fn, d in snapshot.items()}
-    for row in drift:
-        if row.parent_text is None:
-            continue
-        next_snapshot.setdefault(row.source_filename, {})
-        if row.key not in next_snapshot[row.source_filename]:
-            next_snapshot[row.source_filename][row.key] = hash_text(row.parent_text)
-    store.save_parent_snapshot(mod_id, next_snapshot)
+    # Add entries for never-before-seen keys and backfill text on matching ones. Drifted keys keep their old entry so they stay changed.
+    store.save_parent_snapshot(mod_id, refresh_unchanged(snapshot, parent))
 
     # Count from the overlaid rows (not raw drift) so empty-string clears and in-flight overrides match the strings view exactly.
     raw_translations = store.load_translations_raw(mod_id)
@@ -549,7 +541,7 @@ def put_string(mod_id: str, key: str, edit: TranslationEdit) -> dict:
     Raises:
         HTTPException: 404 if `mod_id` is not registered.
     """
-    _require_mod(mod_id)
+    mod = _require_mod(mod_id)
     raw = store.load_translations_raw(mod_id)
     now = datetime.now(timezone.utc).isoformat()
     existing = raw.get(key, {})
@@ -560,6 +552,8 @@ def put_string(mod_id: str, key: str, edit: TranslationEdit) -> dict:
         "provider": "manual",
     }
     store.save_translations_raw(mod_id, raw)
+    # A manual edit settles a changed row: accept the current source as its baseline.
+    store.save_parent_snapshot(mod_id, accept_keys(store.load_parent_snapshot(mod_id), _extract_all_parent_strings(mod), {key}))
     return {"status": "ok"}
 
 
@@ -804,10 +798,8 @@ def sync_changes(mod_id: str) -> dict:
     drift = get_strings(mod_id)
     per_file = sync_translations_to_loc_tsv(mod, drift)
 
-    # Re-baseline the parent snapshot to the current parent hashes (mirrors Chrono Ark's export re-saving last_csv_hash). Syncing accepts the current
-    # source as the baseline for every key, so rows whose source had drifted (stale -> pending) settle to synced once their translation is written.
-    next_snapshot = {fn: {k: hash_text(r.text) for k, r in rows.items()} for fn, rows in parent.items()}
-    store.save_parent_snapshot(mod_id, next_snapshot)
+    # Keys whose source drifted keep their old snapshot entry so they stay changed. Update Changed and Accept re-baseline those explicitly.
+    store.save_parent_snapshot(mod_id, refresh_unchanged(store.load_parent_snapshot(mod_id), parent))
 
     # Rebuild the published .pack from the freshly written loose files. Non-fatal: the writeback already succeeded, so any
     # build problem is reported as a warning rather than failing the sync. Skipped when nothing was written.
@@ -827,6 +819,38 @@ def sync_changes(mod_id: str) -> dict:
             pack_error = str(exc)
 
     return {"per_file": per_file, "removed_orphans": removed_orphans, "pack_built": pack_built, "pack_error": pack_error}
+
+
+class AcceptChangedRequest(BaseModel):
+    """Body of `POST /mods/{mod_id}/accept-changed`."""
+
+    # Keys to accept. None accepts every currently changed key.
+    keys: list[str] | None = None
+
+
+@router.post("/mods/{mod_id}/accept-changed")
+def accept_changed(mod_id: str, req: AcceptChangedRequest) -> dict:
+    """Accept the current source text as the baseline for changed rows, keeping their existing translations.
+
+    Args:
+        mod_id: Steam Workshop ID of the translation mod.
+        req: The keys to accept, or `None` for every changed row.
+
+    Returns:
+        `{"accepted": N}` where N counts the rows re-baselined.
+
+    Raises:
+        HTTPException: 404 if `mod_id` is not registered.
+    """
+    mod = _require_mod(mod_id)
+    parent = _extract_all_parent_strings(mod)
+    snapshot = store.load_parent_snapshot(mod_id)
+    drift = compute_drift(parent=parent, translation=_extract_translation_strings(mod), snapshot=snapshot)
+    changed = {r.key for r in drift if r.status == "stale"}
+    keys = changed if req.keys is None else changed & set(req.keys)
+    if keys:
+        store.save_parent_snapshot(mod_id, accept_keys(snapshot, parent, keys))
+    return {"accepted": len(keys)}
 
 
 @router.get("/mods/{mod_id}/snapshots")
