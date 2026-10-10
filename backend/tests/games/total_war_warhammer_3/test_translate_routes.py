@@ -582,3 +582,89 @@ def test_system_prompt_shows_the_unlocks_recruitment_example(client):
     prompt = client.get("/api/games/total_war_warhammer_3/translate/system-prompt", params={"source_lang": "Chinese"}).json()["system_prompt"]
     assert "获得『卫土戍卒(斩马剑)』『卫土戍卒(重型连弩)』招募许可" in prompt
     assert "Unlocks recruitment for Frontier Guards (Zhan Ma Sword) and Frontier Guards (Heavy Repeater)." in prompt
+
+
+from backend.translator.base import Revision  # noqa: F401,E402  (documents the prompt contract)
+
+
+def _seed_changed(tmp_path: Path, old_text: str | None = "旧") -> None:
+    mod_dir = tmp_path / "games" / "total_war_warhammer_3" / "mods" / "3315737452"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "parent_snapshot.json").write_text(json.dumps({"units.loc.tsv": {"k1": {"hash": "0" * 64, "text": old_text}}}), encoding="utf-8")
+
+
+def test_preview_scope_changed_lists_only_changed_rows_with_update_prompt(client: TestClient, tmp_path: Path):
+    _seed_changed(tmp_path)
+    body = client.post(f"{PREFIX}/preview", json={"mod_id": "3315737452", "scope": "changed"}).json()
+    assert body["total_strings"] == 1
+    assert body["batch_plan"][0]["keys"] == ["k1"]
+    user = body["previews"]["Chinese"]["user_messages"][0]
+    assert "Old original: 旧" in user
+    assert "New original: 原" in user
+    assert "Previous translation: Existing" in user
+    assert "Update Mode" in body["previews"]["Chinese"]["system_prompt"]
+
+
+def test_preview_scope_changed_zero_state(client: TestClient):
+    body = client.post(f"{PREFIX}/preview", json={"mod_id": "3315737452", "scope": "changed"}).json()
+    assert body["total_strings"] == 0
+    assert "message" in body
+
+
+def test_preview_scope_changed_falls_back_when_old_text_is_unknown(client: TestClient, tmp_path: Path):
+    _seed_changed(tmp_path, old_text=None)
+    user = client.post(f"{PREFIX}/preview", json={"mod_id": "3315737452", "scope": "changed"}).json()["previews"]["Chinese"]["user_messages"][0]
+    assert "Old original" not in user
+    assert "New original: 原" in user
+
+
+def test_preview_scope_changed_skips_rows_with_blank_new_source(client: TestClient, tmp_path: Path, monkeypatch):
+    _seed_changed(tmp_path)
+    monkeypatch.setattr(routes_module, "_extract_all_parent_strings", lambda mod: {"units.loc.tsv": {"k1": LocRow("k1", "  ", True)}})
+    body = client.post(f"{PREFIX}/preview", json={"mod_id": "3315737452", "scope": "changed"}).json()
+    assert body["total_strings"] == 0
+
+
+def test_update_batch_sends_revisions_saves_and_rebaselines(client: TestClient, monkeypatch, tmp_path: Path):
+    _seed_changed(tmp_path)
+    seen = {}
+
+    def fake_translate_batch(self, entries, source_lang, glossary_prompt, **kwargs):
+        seen["revisions"] = self.revisions
+        seen["entries"] = entries
+        return ({"k1": "Revised"}, [])
+
+    monkeypatch.setattr("backend.translator.claude_provider.ClaudeProvider.translate_batch", fake_translate_batch)
+    resp = client.post(f"{PREFIX}/batch", json={"mod_id": "3315737452", "keys": ["k1"], "source_lang": "Chinese", "mode": "update"})
+    assert resp.status_code == 200
+    assert seen["entries"] == [("k1", "原")]
+    assert seen["revisions"]["k1"].old_source == "旧"
+    assert seen["revisions"]["k1"].previous_translation == "Existing"
+
+    mod_dir = tmp_path / "games" / "total_war_warhammer_3" / "mods" / "3315737452"
+    saved = json.loads((mod_dir / "translations.json").read_text(encoding="utf-8"))
+    assert saved["k1"]["text"] == "Revised"
+    snap = json.loads((mod_dir / "parent_snapshot.json").read_text(encoding="utf-8"))
+    assert snap["units.loc.tsv"]["k1"]["text"] == "原"
+
+    rows = client.get("/api/games/total_war_warhammer_3/translation/mods/3315737452/strings").json()
+    assert next(r for r in rows if r["key"] == "k1")["canonical_status"] == "pending"
+
+
+def test_update_batch_uses_the_recorded_baseline_after_two_source_changes(client: TestClient, monkeypatch, tmp_path: Path):
+    # The snapshot keeps the text from the last accepted baseline, so a second source edit does not replace it.
+    _seed_changed(tmp_path, old_text="BASELINE")
+    seen = {}
+
+    def fake_translate_batch(self, entries, source_lang, glossary_prompt, **kwargs):
+        seen["old"] = self.revisions["k1"].old_source
+        return ({"k1": "Revised"}, [])
+
+    monkeypatch.setattr("backend.translator.claude_provider.ClaudeProvider.translate_batch", fake_translate_batch)
+    client.post(f"{PREFIX}/batch", json={"mod_id": "3315737452", "keys": ["k1"], "source_lang": "Chinese", "mode": "update"})
+    assert seen["old"] == "BASELINE"
+
+
+def test_update_batch_ignores_unchanged_keys_and_400s_when_none_left(client: TestClient):
+    resp = client.post(f"{PREFIX}/batch", json={"mod_id": "3315737452", "keys": ["k2"], "source_lang": "Chinese", "mode": "update"})
+    assert resp.status_code == 400

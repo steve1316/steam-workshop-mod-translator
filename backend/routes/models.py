@@ -59,6 +59,7 @@ class TranslationRequest(BaseModel):
         scope: Which rows to include. `"all"` (default) is every untranslated
             row; `"names"` restricts the WH3 preview to name strings only
             (unit/skill/building/location/...), for the Translate-Names-first pass.
+            `"changed"` restricts the WH3 preview to changed rows for Update Changed.
     """
 
     mod_id: str
@@ -76,6 +77,7 @@ class BatchTranslationRequest(BaseModel):
         keys: Explicit localization keys to translate in this batch.
         source_lang: The source language for all keys in this batch.
         is_first_batch: When True, creates a backup before translating.
+        mode: `"translate"` (default) or `"update"`. Update revises the previous translations of changed rows (WH3).
     """
 
     mod_id: str
@@ -83,6 +85,7 @@ class BatchTranslationRequest(BaseModel):
     keys: list[str]
     source_lang: str
     is_first_batch: bool = False
+    mode: str = "translate"
 
 
 class TranslationUpdate(BaseModel):

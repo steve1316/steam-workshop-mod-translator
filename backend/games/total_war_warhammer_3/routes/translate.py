@@ -18,8 +18,11 @@ from backend.games.storage_paths import game_storage_path
 from backend.games.total_war_warhammer_3.name_keys import NAME_STAGES, classify_name_key, is_name_key
 from backend.games.total_war_warhammer_3.name_spacing import glossary_words, space_pinyin_names
 from backend.games.total_war_warhammer_3.routes import translation as _t
+from backend.games.total_war_warhammer_3.source_snapshot import accept_keys
+from backend.games.total_war_warhammer_3.translation_drift import entry_text
 from backend.routes.models import BatchTranslationRequest, TranslationRequest
 from backend.translation.orchestrator import chunk_entries, run_batch
+from backend.translator.base import Revision
 
 GAME_ID = "total_war_warhammer_3"
 
@@ -139,6 +142,31 @@ def _untranslated_entries(mod, mod_id: str, key_filter=None) -> list[tuple[str, 
     return [(r.key, src_by_key.get(r.key, "")) for r in overlaid if r.status == "untranslated" and src_by_key.get(r.key) and (key_filter is None or key_filter(r.key))]
 
 
+def _changed_entries(mod, mod_id: str) -> tuple[list[tuple[str, str]], dict[str, Revision]]:
+    """Return (key, new_source) tuples and update baselines for every changed row.
+
+    A row is changed when its source drifted from the snapshot and it still has a translation. Rows whose new source is blank are left out.
+
+    Args:
+        mod: The resolved `WH3TranslationMod`.
+        mod_id: Workshop ID of the translation mod.
+
+    Returns:
+        The entries in drift order, and a key -> `Revision` map holding the recorded old source and the translation shown in the table.
+    """
+    parent = _t._extract_all_parent_strings(mod)
+    snapshot = _t.store.load_parent_snapshot(mod_id)
+    drift = _t.compute_drift(parent=parent, translation=_t._extract_translation_strings(mod), snapshot=snapshot)
+    entries: list[tuple[str, str]] = []
+    revisions: dict[str, Revision] = {}
+    for row in _t._overlay_translations(drift, _t.store.load_translations_raw(mod_id)):
+        if row.status != "stale" or not (row.parent_text or "").strip() or not row.translation_text:
+            continue
+        entries.append((row.key, row.parent_text))
+        revisions[row.key] = Revision(old_source=entry_text(snapshot.get(row.source_filename, {}).get(row.key)), previous_translation=row.translation_text)
+    return entries, revisions
+
+
 @router.get("/system-prompt")
 async def get_system_prompt(source_lang: str = "Chinese", target_lang: str = "English") -> dict:
     """Return the system prompt a WH3 translation run would send, for the Settings preview.
@@ -171,7 +199,7 @@ async def get_system_prompt(source_lang: str = "Chinese", target_lang: str = "En
 
 @router.post("/preview")
 async def preview(req: TranslationRequest) -> dict:
-    """Preview the prompts, cost estimate, and batch plan for translating a WH3 mod's untranslated rows.
+    """Preview the prompts, cost estimate, and batch plan for translating a WH3 mod's untranslated rows (or its changed rows when `scope == "changed"`).
 
     Args:
         req: Translation request carrying the mod id and optional provider override.
@@ -189,9 +217,14 @@ async def preview(req: TranslationRequest) -> dict:
     target_lang = mod.target_language
 
     names_only = req.scope == "names"
-    entries = _untranslated_entries(mod, req.mod_id, key_filter=is_name_key if names_only else None)
+    changed_only = req.scope == "changed"
+    revisions: dict[str, Revision] = {}
+    if changed_only:
+        entries, revisions = _changed_entries(mod, req.mod_id)
+    else:
+        entries = _untranslated_entries(mod, req.mod_id, key_filter=is_name_key if names_only else None)
     if not entries:
-        message = "All names already translated" if names_only else "All strings already translated"
+        message = "No changed strings to update" if changed_only else ("All names already translated" if names_only else "All strings already translated")
         return {"total_strings": 0, "message": message, "previews": {}}
 
     batch_size = _t.config.BATCH_SIZE
@@ -220,6 +253,7 @@ async def preview(req: TranslationRequest) -> dict:
         chunks = chunk_entries(entries, batch_size, max_chars)
 
     provider = _t.ClaudeProvider()
+    provider.revisions = revisions or None
     adapter = _t.TotalWarWarhammer3Adapter()
     glossary_prompt = _glossary_prompt(req.mod_id, source_lang, target_lang, mod=mod)
     game_context = adapter.get_translation_context()
@@ -302,7 +336,7 @@ async def translate_batch(req: BatchTranslationRequest) -> dict:
     written incrementally and the provider's suggested glossary terms are returned for review.
 
     Args:
-        req: Batch request with `mod_id`, explicit `keys`, `source_lang`, optional provider override, and `is_first_batch`.
+        req: Batch request with `mod_id`, explicit `keys`, `source_lang`, optional provider override, `is_first_batch`, and `mode` (`update` revises changed rows).
 
     Returns:
         `{"status": "success", "translated": N, "translations": {key: text}, "suggestions": [...]}`.
@@ -318,17 +352,24 @@ async def translate_batch(req: BatchTranslationRequest) -> dict:
 
     parent = _t._extract_all_parent_strings(mod)
     wanted = set(req.keys)
+    revisions: dict[str, Revision] = {}
     entries: list[tuple[str, str]] = []
-    for rows in parent.values():
-        for key, row in rows.items():
-            if key in wanted and row.text:
-                entries.append((key, row.text))
+    if req.mode == "update":
+        changed_entries, changed_revisions = _changed_entries(mod, req.mod_id)
+        entries = [e for e in changed_entries if e[0] in wanted]
+        revisions = {k: v for k, v in changed_revisions.items() if k in wanted}
+    else:
+        for rows in parent.values():
+            for key, row in rows.items():
+                if key in wanted and row.text:
+                    entries.append((key, row.text))
     if not entries:
         raise HTTPException(status_code=400, detail="No translatable text found for the provided keys")
 
     adapter = _t.TotalWarWarhammer3Adapter()
     glossary_prompt = _glossary_prompt(req.mod_id, source_lang, target_lang, mod=mod)
     provider = _t.ClaudeProvider()
+    provider.revisions = revisions or None
     provider.last_raw_responses = []
     keys = [k for k, _ in entries]
 
@@ -369,6 +410,9 @@ async def translate_batch(req: BatchTranslationRequest) -> dict:
         existing = raw.get(key, {})
         raw[key] = {"text": text, "created_at": existing.get("created_at") or now, "updated_at": now, "provider": "claude"}
     _t.store.save_translations_raw(req.mod_id, raw)
+    if req.mode == "update":
+        # The row now holds a revised translation, so the current source becomes its baseline. It shows as pending until Sync.
+        _t.store.save_parent_snapshot(req.mod_id, accept_keys(_t.store.load_parent_snapshot(req.mod_id), parent, set(spaced)))
 
     _log_batch_call(req.mod_id, keys, provider.last_raw_responses)
 
