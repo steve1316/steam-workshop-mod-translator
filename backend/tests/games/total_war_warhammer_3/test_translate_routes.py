@@ -668,3 +668,43 @@ def test_update_batch_uses_the_recorded_baseline_after_two_source_changes(client
 def test_update_batch_ignores_unchanged_keys_and_400s_when_none_left(client: TestClient):
     resp = client.post(f"{PREFIX}/batch", json={"mod_id": "3315737452", "keys": ["k2"], "source_lang": "Chinese", "mode": "update"})
     assert resp.status_code == 400
+
+
+STRINGS_URL = "/api/games/total_war_warhammer_3/translation/mods/3315737452/strings"
+
+
+def _seed_drifted_untranslated(tmp_path: Path) -> Path:
+    mod_dir = tmp_path / "games" / "total_war_warhammer_3" / "mods" / "3315737452"
+    mod_dir.mkdir(parents=True, exist_ok=True)
+    (mod_dir / "parent_snapshot.json").write_text(json.dumps({"units.loc.tsv": {"k2": {"hash": "0" * 64, "text": "旧"}}}), encoding="utf-8")
+    return mod_dir
+
+
+def test_translate_batch_rebaselines_an_untranslated_drifted_key_so_it_never_shows_changed(client: TestClient, monkeypatch, tmp_path: Path):
+    mod_dir = _seed_drifted_untranslated(tmp_path)
+    monkeypatch.setattr("backend.translator.claude_provider.ClaudeProvider.translate_batch", lambda self, entries, source_lang, glossary_prompt, **kw: ({"k2": "Fresh"}, []))
+    resp = client.post(f"{PREFIX}/batch", json={"mod_id": "3315737452", "keys": ["k2"], "source_lang": "Chinese"})
+    assert resp.status_code == 200
+
+    snap = json.loads((mod_dir / "parent_snapshot.json").read_text(encoding="utf-8"))
+    assert snap["units.loc.tsv"]["k2"]["text"] == "新"
+    rows = client.get(STRINGS_URL).json()
+    assert next(r for r in rows if r["key"] == "k2")["canonical_status"] == "pending"
+
+    monkeypatch.setattr(routes_module, "sync_translations_to_loc_tsv", lambda mod, drift: {"/abs/units.loc.tsv": 1})
+    monkeypatch.setattr(routes_module, "resolve_rpfm_cli_path", lambda: Path("/fake/rpfm_cli.exe"))
+    monkeypatch.setattr(routes_module, "tw3_workshop_content_dir", lambda mid: tmp_path)
+    monkeypatch.setattr(routes_module, "build_translation_pack", lambda mod, **kw: True)
+    assert client.post("/api/games/total_war_warhammer_3/translation/mods/3315737452/sync").status_code == 200
+    rows = client.get(STRINGS_URL).json()
+    assert next(r for r in rows if r["key"] == "k2")["canonical_status"] in ("synced", "pending")
+
+
+def test_translate_batch_after_clearing_a_changed_row_is_not_changed(client: TestClient, monkeypatch, tmp_path: Path):
+    _seed_changed(tmp_path)
+    assert client.put("/api/games/total_war_warhammer_3/translation/mods/3315737452/strings/k1", json={"text": ""}).status_code == 200
+    monkeypatch.setattr("backend.translator.claude_provider.ClaudeProvider.translate_batch", lambda self, entries, source_lang, glossary_prompt, **kw: ({"k1": "Fresh"}, []))
+    resp = client.post(f"{PREFIX}/batch", json={"mod_id": "3315737452", "keys": ["k1"], "source_lang": "Chinese"})
+    assert resp.status_code == 200
+    rows = client.get(STRINGS_URL).json()
+    assert next(r for r in rows if r["key"] == "k1")["canonical_status"] != "changed"

@@ -410,9 +410,8 @@ async def translate_batch(req: BatchTranslationRequest) -> dict:
         existing = raw.get(key, {})
         raw[key] = {"text": text, "created_at": existing.get("created_at") or now, "updated_at": now, "provider": "claude"}
     _t.store.save_translations_raw(req.mod_id, raw)
-    if req.mode == "update":
-        # The row now holds a revised translation, so the current source becomes its baseline. It shows as pending until Sync.
-        _t.store.save_parent_snapshot(req.mod_id, accept_keys(_t.store.load_parent_snapshot(req.mod_id), parent, set(spaced)))
+    # Each saved row was translated from the current source, so that source becomes its baseline. It shows as pending until Sync.
+    _t.store.save_parent_snapshot(req.mod_id, accept_keys(_t.store.load_parent_snapshot(req.mod_id), parent, set(spaced)))
 
     _log_batch_call(req.mod_id, keys, provider.last_raw_responses)
 
