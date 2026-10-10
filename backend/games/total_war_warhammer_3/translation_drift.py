@@ -51,11 +51,51 @@ def hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+def make_entry(text: str) -> dict[str, str]:
+    """Build a parent snapshot entry for `text`.
+
+    Args:
+        text: The parent source text to record.
+
+    Returns:
+        `{"hash": sha256_hex, "text": text}`.
+    """
+    return {"hash": hash_text(text), "text": text}
+
+
+def entry_hash(entry: str | dict | None) -> str | None:
+    """Return the recorded hash of a snapshot entry.
+
+    Args:
+        entry: A `{hash, text}` dict, a legacy bare hash string, or `None`.
+
+    Returns:
+        The hash, or `None` when there is no entry.
+    """
+    if entry is None:
+        return None
+    if isinstance(entry, dict):
+        return entry.get("hash")
+    return entry
+
+
+def entry_text(entry: str | dict | None) -> str | None:
+    """Return the recorded source text of a snapshot entry.
+
+    Args:
+        entry: A `{hash, text}` dict, a legacy bare hash string, or `None`.
+
+    Returns:
+        The recorded text, or `None` for a legacy or missing entry.
+    """
+    return entry.get("text") if isinstance(entry, dict) else None
+
+
 def compute_drift(
     *,
     parent: dict[str, dict[str, LocRow]],
     translation: dict[str, dict[str, LocRow]],
-    snapshot: dict[str, dict[str, str]],
+    snapshot: dict[str, dict[str, str | dict]],
 ) -> list[DriftRow]:
     """Compute per-row drift status.
 
@@ -63,8 +103,8 @@ def compute_drift(
         parent: `{filename: {key: LocRow}}` extracted from the parent `.pack`.
         translation: `{filename: {key: LocRow}}` parsed from the user's local
             translation `.loc.tsv` files.
-        snapshot: `{filename: {key: sha256_hex}}` recording the parent source
-            text the user last saw / acted on.
+        snapshot: `{filename: {key: entry}}` recording the parent source text the
+            user last saw / acted on. An entry is a `{hash, text}` dict or a legacy sha256_hex string.
 
     Returns:
         Sorted list of `DriftRow` (filename ascending, then key ascending).
@@ -96,7 +136,7 @@ def compute_drift(
                 continue
 
             current_hash = hash_text(p_row.text)
-            cached_hash = snapshot_for_file.get(key)
+            cached_hash = entry_hash(snapshot_for_file.get(key))
 
             if cached_hash is None or cached_hash == current_hash:
                 rows.append(DriftRow(filename, key, p_row.text, t_row.text, "translated"))

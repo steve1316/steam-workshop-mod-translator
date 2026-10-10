@@ -123,3 +123,29 @@ def test_drift_row_default_provider_is_none():
         status="untranslated",
     )
     assert row.provider is None
+
+
+from backend.games.total_war_warhammer_3.translation_drift import entry_hash, entry_text, make_entry
+
+
+def test_make_entry_holds_hash_and_text():
+    assert make_entry("abc") == {"hash": hash_text("abc"), "text": "abc"}
+
+
+def test_entry_helpers_accept_legacy_hash_strings_and_none():
+    assert entry_hash(hash_text("x")) == hash_text("x")
+    assert entry_text(hash_text("x")) is None
+    assert entry_hash(None) is None
+    assert entry_text(None) is None
+    assert entry_hash(make_entry("x")) == hash_text("x")
+    assert entry_text(make_entry("x")) == "x"
+
+
+def test_compute_drift_reads_dict_snapshot_entries():
+    parent = {"units.loc.tsv": {"k1": _row("k1", "新文本")}}
+    translation = {"units.loc.tsv": {"k1": _row("k1", "Original")}}
+    snapshot = {"units.loc.tsv": {"k1": make_entry("原始")}}
+
+    assert compute_drift(parent=parent, translation=translation, snapshot=snapshot)[0].status == "stale"
+    snapshot = {"units.loc.tsv": {"k1": make_entry("新文本")}}
+    assert compute_drift(parent=parent, translation=translation, snapshot=snapshot)[0].status == "translated"

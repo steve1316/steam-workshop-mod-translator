@@ -112,23 +112,26 @@ def save_include_translated_names(mod_id: str, value: bool) -> None:
         json.dump({"include_translated_names": value}, f, indent=2)
 
 
-def load_parent_snapshot(mod_id: str) -> dict[str, dict[str, str]]:
-    """Load `{filename: {key: sha256_hex}}` snapshot, defaulting to empty.
+def load_parent_snapshot(mod_id: str) -> dict[str, dict[str, dict]]:
+    """Load `{filename: {key: {hash, text}}}` snapshot, defaulting to empty.
+
+    Legacy files stored a bare hash string per key. Those load as `{"hash": <string>, "text": None}`.
 
     Args:
         mod_id: The mod identifier.
 
     Returns:
-        Dictionary mapping filenames to dicts of key/hash pairs, or empty dict.
+        Dictionary mapping filenames to dicts of key/entry pairs, or empty dict.
     """
     path = _root() / "mods" / mod_id / "parent_snapshot.json"
     if not path.exists():
         return {}
     try:
         with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+            raw = json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
+    return {fn: {k: (v if isinstance(v, dict) else {"hash": v, "text": None}) for k, v in entries.items()} for fn, entries in raw.items()}
 
 
 def save_parent_snapshot(mod_id: str, snapshot: dict[str, dict[str, str]]) -> None:
