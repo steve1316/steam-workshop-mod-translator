@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -106,27 +107,92 @@ def test_diff_counts_new_revised_and_removed_by_file_and_key():
     assert tcn.diff_counts(baseline, shipped) == (2, 1, 1)
 
 
-def test_build_note_without_a_baseline_is_generic_and_pending():
-    assert tcn.build_note(None, {"a": {"k": "h"}}) == ("[u]Translation update[/u]", True)
-
-
-def test_build_note_with_no_changes_is_generic_and_not_pending():
-    shipped = {"a": {"k": "h"}}
-
-    assert tcn.build_note({"strings": shipped}, shipped) == ("[u]Translation update[/u]", False)
-
-
-def test_build_note_lists_only_non_zero_counts_in_order():
-    baseline = {"strings": {"a": {"k1": "h1", "k2": "h2", "k3": "h3", "old": "h"}}}
-    shipped = {"a": {"k1": "h1", "k2": "x", "k3": "y", "n1": "h", "n2": "h"}}
-
-    note, pending = tcn.build_note(baseline, shipped)
+def test_build_note_names_when_the_parent_mods_were_last_updated():
+    note, pending = tcn.build_note(None, {"a": {"k": "h"}}, datetime(2026, 10, 5, 10, 53))
 
     assert pending is True
-    assert note == "[u]Translation update[/u]\n\n• Translated 2 new strings\n• Revised 2 translations\n• Removed 1 string no longer in the parent mod"
+    assert note == "[u]Translation update[/u]\n\nUpdated the translations to the latest mod changes as of Oct 5 @ 10:53am."
 
 
-def test_build_note_uses_singular_nouns_for_one():
-    note, _ = tcn.build_note({"strings": {"a": {"k1": "h1"}}}, {"a": {"k1": "x", "k2": "h"}})
+def test_build_note_is_generic_when_the_parent_update_time_is_unknown():
+    assert tcn.build_note(None, {"a": {"k": "h"}}, None) == ("[u]Translation update[/u]", True)
 
-    assert note == "[u]Translation update[/u]\n\n• Translated 1 new string\n• Revised 1 translation"
+
+def test_build_note_is_pending_only_when_the_shipped_set_changed():
+    shipped = {"a": {"k": "h"}}
+
+    assert tcn.build_note({"strings": shipped}, shipped, None)[1] is False
+    assert tcn.build_note({"strings": shipped}, {"a": {"k": "x"}}, None)[1] is True
+    assert tcn.build_note({"strings": shipped}, {}, None)[1] is True
+
+
+@pytest.mark.parametrize(
+    ("when", "expected"),
+    [
+        (datetime(2026, 10, 5, 7, 49), "Oct 5 @ 7:49am"),
+        (datetime(2026, 10, 12, 0, 5), "Oct 12 @ 12:05am"),
+        (datetime(2026, 1, 3, 12, 0), "Jan 3 @ 12:00pm"),
+        (datetime(2026, 6, 30, 22, 48), "Jun 30 @ 10:48pm"),
+    ],
+)
+def test_format_update_time_matches_the_steam_workshop_style(when: datetime, expected: str):
+    assert tcn.format_update_time(when) == expected
+
+
+# //////////////////////////////////////////////////////////////////////////////////////////////////
+# //////////////////////////////////////////////////////////////////////////////////////////////////
+# Parent update time
+
+MANIFEST = """"AppWorkshop"
+{
+	"WorkshopItemsInstalled"
+	{
+		"111"
+		{
+			"size"		"10"
+			"timeupdated"		"1791211788"
+		}
+		"222"
+		{
+			"timeupdated"		"1791300000"
+		}
+		"333"
+		{
+			"timeupdated"		"1799999999"
+		}
+	}
+	"WorkshopItemDetails"
+	{
+		"111"
+		{
+			"timeupdated"		"1791211788"
+			"latest_timeupdated"		"1791211788"
+		}
+	}
+}
+"""
+
+
+@pytest.fixture
+def manifest(monkeypatch, tmp_path: Path) -> Path:
+    """Point the Workshop manifest lookup at a temp file holding `MANIFEST`."""
+    path = tmp_path / "appworkshop_1142710.acf"
+    path.write_text(MANIFEST, encoding="utf-8")
+    monkeypatch.setattr(tcn, "tw3_workshop_manifest_path", lambda: path)
+    return path
+
+
+def test_parent_updated_at_reads_one_parent(manifest: Path):
+    assert tcn.parent_updated_at(["111"]) == datetime.fromtimestamp(1791211788)
+
+
+def test_parent_updated_at_takes_the_latest_parent_of_a_collection(manifest: Path):
+    assert tcn.parent_updated_at(["111", "222", "999"]) == datetime.fromtimestamp(1791300000)
+
+
+def test_parent_updated_at_is_none_for_unknown_parents_or_a_missing_manifest(manifest: Path, monkeypatch, tmp_path: Path):
+    assert tcn.parent_updated_at(["999"]) is None
+    monkeypatch.setattr(tcn, "tw3_workshop_manifest_path", lambda: tmp_path / "missing.acf")
+    assert tcn.parent_updated_at(["111"]) is None
+    monkeypatch.setattr(tcn, "tw3_workshop_manifest_path", lambda: None)
+    assert tcn.parent_updated_at(["111"]) is None

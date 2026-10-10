@@ -33,11 +33,12 @@ def change_notes_for(ids: list[str]) -> dict:
     errors: list[str] = []
     compat_ids: list[str] = []
     for wid in ids:
-        if get_translation_mod(wid) is None:
+        mod = get_translation_mod(wid)
+        if mod is None:
             compat_ids.append(wid)
             continue
         try:
-            note, pending = tcn.build_note(tcn.load_baseline(wid), current_shipped_strings(wid))
+            note, pending = tcn.build_note(tcn.load_baseline(wid), current_shipped_strings(wid), tcn.parent_updated_at(mod.parent_workshop_ids))
         except Exception as exc:
             errors.append(f"{wid}: {getattr(exc, 'detail', None) or exc}")
             notes[wid] = None

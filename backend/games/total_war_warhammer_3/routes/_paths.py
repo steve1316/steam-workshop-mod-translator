@@ -32,6 +32,27 @@ def tw3_workshop_content_dir(workshop_id: str) -> Path | None:
         Resolved `Path` to the workshop content directory, or `None` when the
         Steam library drive setting is empty.
     """
+    workshop_dir = _tw3_workshop_dir()
+    return None if workshop_dir is None else workshop_dir / "content" / TW3_APPID / workshop_id
+
+
+def tw3_workshop_manifest_path() -> Path | None:
+    """Resolve Steam's TW3 Workshop manifest, which records when each subscribed item was last updated.
+
+    Returns:
+        `<steam_library_drive>\\SteamLibrary\\steamapps\\workshop\\appworkshop_1142710.acf`, or `None` when the Steam library drive setting is
+        empty. The file may not exist on disk.
+    """
+    workshop_dir = _tw3_workshop_dir()
+    return None if workshop_dir is None else workshop_dir / f"appworkshop_{TW3_APPID}.acf"
+
+
+def _tw3_workshop_dir() -> Path | None:
+    """Resolve the Steam library's Workshop folder from `config.TW3_STEAM_LIBRARY_DRIVE`.
+
+    Returns:
+        `<steam_library_drive>\\SteamLibrary\\steamapps\\workshop`, or `None` when the Steam library drive setting is empty.
+    """
     drive = (config.TW3_STEAM_LIBRARY_DRIVE or "").strip()
     if not drive:
         return None
@@ -39,4 +60,4 @@ def tw3_workshop_content_dir(workshop_id: str) -> Path | None:
     # instead of one relative to the current directory on that drive.
     if len(drive) == 2 and drive.endswith(":"):
         drive = drive + "\\"
-    return Path(drive) / "SteamLibrary" / "steamapps" / "workshop" / "content" / TW3_APPID / workshop_id
+    return Path(drive) / "SteamLibrary" / "steamapps" / "workshop"

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from backend.games.total_war_warhammer_3 import compat_change_notes as ccn
@@ -14,8 +16,10 @@ SHIPPED = {"units.loc.tsv": {"k1": "h1"}}
 
 
 def _only_translation_mod(monkeypatch) -> None:
-    """Treat `TRANSLATION_ID` as the only registered translation mod and give it a fixed shipped set."""
-    monkeypatch.setattr(pn, "get_translation_mod", lambda wid: object() if wid == TRANSLATION_ID else None)
+    """Treat `TRANSLATION_ID` as the only registered translation mod and give it a fixed shipped set and no known parent update time."""
+    mod = SimpleNamespace(parent_workshop_ids=("p",))
+    monkeypatch.setattr(pn, "get_translation_mod", lambda wid: mod if wid == TRANSLATION_ID else None)
+    monkeypatch.setattr(pn.tcn, "parent_updated_at", lambda ids: None)
     monkeypatch.setattr(pn, "current_shipped_strings", lambda wid: SHIPPED)
 
 

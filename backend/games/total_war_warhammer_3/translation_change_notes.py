@@ -8,16 +8,21 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
 from backend.games.storage_paths import game_storage_path
+from backend.games.total_war_warhammer_3.routes._paths import tw3_workshop_manifest_path
 from backend.games.total_war_warhammer_3.translation_drift import DriftRow, hash_text
 
 GAME_ID = "total_war_warhammer_3"
 BASELINE_FILENAME = "published_baseline.json"
 GENERIC_NOTE = "[u]Translation update[/u]"
+# One `"<workshop id>" { ... }` block in Steam's Workshop manifest. Each item appears in more than one section.
+_MANIFEST_ITEM = re.compile(r'"(\d+)"\s*\{([^{}]*)\}')
+_MANIFEST_UPDATED = re.compile(r'"timeupdated"\s*"(\d+)"')
 
 
 def _baseline_path(mod_id: str) -> Path:
@@ -30,19 +35,6 @@ def _baseline_path(mod_id: str) -> Path:
         `<root>/mods/{mod_id}/published_baseline.json`.
     """
     return game_storage_path(GAME_ID) / "mods" / mod_id / BASELINE_FILENAME
-
-
-def _plural(count: int, noun: str) -> str:
-    """Write a count with its noun, adding an `s` unless the count is one.
-
-    Args:
-        count: How many.
-        noun: Singular noun phrase, e.g. `new string`.
-
-    Returns:
-        e.g. `1 new string` or `3 new strings`.
-    """
-    return f"{count} {noun}" if count == 1 else f"{count} {noun}s"
 
 
 def shipped_strings(rows: Iterable[DriftRow]) -> dict[str, dict[str, str]]:
@@ -114,26 +106,55 @@ def diff_counts(baseline: dict[str, dict[str, str]], shipped: dict[str, dict[str
     return added, revised, removed
 
 
-def build_note(baseline: dict | None, shipped: dict[str, dict[str, str]]) -> tuple[str, bool]:
-    """Build a translation mod's changenote from what changed since its last publish.
+def parent_updated_at(parent_ids: Iterable[str]) -> datetime | None:
+    """Find when the most recently updated parent mod was last updated, from Steam's Workshop manifest.
+
+    Args:
+        parent_ids: Workshop ids of the translation mod's parent mods.
+
+    Returns:
+        The latest `timeupdated` among the parents as a local time, or None when the manifest is missing or lists none of them.
+    """
+    path = tw3_workshop_manifest_path()
+    if path is None:
+        return None
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    wanted = set(parent_ids)
+    times = [int(m) for wid, body in _MANIFEST_ITEM.findall(text) if wid in wanted for m in _MANIFEST_UPDATED.findall(body)]
+    return datetime.fromtimestamp(max(times)) if times else None
+
+
+def format_update_time(when: datetime) -> str:
+    """Format a time the way the Steam Workshop shows it.
+
+    Args:
+        when: The time to format.
+
+    Returns:
+        e.g. `Oct 5 @ 10:53am`.
+    """
+    hour = when.hour % 12 or 12
+    return f"{when:%b} {when.day} @ {hour}:{when:%M}{'am' if when.hour < 12 else 'pm'}"
+
+
+def build_note(baseline: dict | None, shipped: dict[str, dict[str, str]], parent_updated: datetime | None) -> tuple[str, bool]:
+    """Build a translation mod's changenote, naming when its parent mods were last updated.
 
     Args:
         baseline: The mod's published baseline, or None when it has none.
         shipped: The shipped set about to be published.
+        parent_updated: When the most recently updated parent mod was last updated, or None when unknown.
 
     Returns:
-        `(note, pending)`. Without a baseline the note is `GENERIC_NOTE` and pending. With a baseline and no differences it is `GENERIC_NOTE` and not pending.
+        `(note, pending)`. The note is `GENERIC_NOTE` alone when `parent_updated` is unknown. It is pending without a baseline or when the
+        shipped set differs from it.
     """
+    note = GENERIC_NOTE
+    if parent_updated is not None:
+        note += f"\n\nUpdated the translations to the latest mod changes as of {format_update_time(parent_updated)}."
     if baseline is None:
-        return GENERIC_NOTE, True
-    added, revised, removed = diff_counts(baseline.get("strings") or {}, shipped)
-    lines = []
-    if added:
-        lines.append(f"• Translated {_plural(added, 'new string')}")
-    if revised:
-        lines.append(f"• Revised {_plural(revised, 'translation')}")
-    if removed:
-        lines.append(f"• Removed {_plural(removed, 'string')} no longer in the parent mod")
-    if not lines:
-        return GENERIC_NOTE, False
-    return GENERIC_NOTE + "\n\n" + "\n".join(lines), True
+        return note, True
+    return note, any(diff_counts(baseline.get("strings") or {}, shipped))
