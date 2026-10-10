@@ -602,3 +602,20 @@ def test_accept_changed_rebaselines_all_or_given_keys(client: TestClient, tmp_pa
     assert resp.json() == {"accepted": 1}
     rows = client.get(f"{base}/strings").json()
     assert next(r for r in rows if r["key"] == "k1")["canonical_status"] == "synced"
+
+
+def test_manual_edit_survives_a_failing_source_extraction(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The snapshot-accept step is best effort, so a manual edit still saves when source extraction fails."""
+    mod_id = "3315737452"
+    mod_dir = tmp_path / "games" / "total_war_warhammer_3" / "mods" / mod_id
+    mod_dir.mkdir(parents=True, exist_ok=True)
+
+    def boom(mod):
+        raise RuntimeError("no rpfm")
+
+    monkeypatch.setattr(routes_module, "_extract_all_parent_strings", boom)
+    resp = client.put(f"/api/games/total_war_warhammer_3/translation/mods/{mod_id}/strings/k1", json={"text": "Edited"})
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "ok"}
+    saved = json.loads((mod_dir / "translations.json").read_text(encoding="utf-8"))
+    assert saved["k1"]["text"] == "Edited"

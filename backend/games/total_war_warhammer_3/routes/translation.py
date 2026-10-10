@@ -7,6 +7,7 @@ tests can monkeypatch them in isolation.
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -63,6 +64,8 @@ from backend.games.total_war_warhammer_3.translation_mods import (
     get_translation_mod,
 )
 from backend.translator.claude_provider import ClaudeProvider
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/translation", tags=["translation"])
 
@@ -552,8 +555,11 @@ def put_string(mod_id: str, key: str, edit: TranslationEdit) -> dict:
         "provider": "manual",
     }
     store.save_translations_raw(mod_id, raw)
-    # A manual edit settles a changed row: accept the current source as its baseline.
-    store.save_parent_snapshot(mod_id, accept_keys(store.load_parent_snapshot(mod_id), _extract_all_parent_strings(mod), {key}))
+    # A manual edit settles a changed row: accept the current source as its baseline. Best effort, since extraction may need RPFM.
+    try:
+        store.save_parent_snapshot(mod_id, accept_keys(store.load_parent_snapshot(mod_id), _extract_all_parent_strings(mod), {key}))
+    except Exception as e:
+        logger.warning("Could not accept the current source for %s in mod %s: %s", key, mod_id, e)
     return {"status": "ok"}
 
 
