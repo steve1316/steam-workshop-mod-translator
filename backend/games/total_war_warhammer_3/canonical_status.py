@@ -1,12 +1,11 @@
-"""Map WH3 drift rows to the canonical five-state status model.
+"""Map WH3 drift rows to the canonical six-state status model.
 
 WH3's native drift model (translated/untranslated/stale/orphan) plus its
 `translations.json` overlay are folded into the shared `RowStatus` so the WH3
 page renders the same status chips as Chrono Ark. `synced` means the effective
 translation already matches what is written on disk in the `.loc.tsv` (no pending
-differing override). A source-text drift (`stale`) or any unsynced edit becomes
-`pending`. `orphan` and `untranslated` become `missing`. A row whose parent source
-is blank becomes `untranslatable`. WH3 has no `untouched` state, so it never emits it.
+differing override). A source-text drift (`stale`) becomes `changed`, and an unsynced edit with no drift is `pending`. `orphan` and
+`untranslated` become `missing`. A row whose parent source is blank becomes `untranslatable`. WH3 has no `untouched` state, so it never emits it.
 """
 
 from __future__ import annotations

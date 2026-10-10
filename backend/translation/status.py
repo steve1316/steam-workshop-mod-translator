@@ -1,6 +1,6 @@
 """Canonical translation status model shared across games.
 
-Defines the five-state `RowStatus` every game adapter maps its rows into,
+Defines the six-state `RowStatus` every game adapter maps its rows into,
 `classify_status()` which encodes the shared classification rules, and the
 `StatusRow` response model returned to the frontend strings table.
 """
@@ -67,7 +67,7 @@ class StatusRow(BaseModel):
         source_file: File the key belongs to. Empty string when not applicable.
         source_text: Source-language text, or None when absent (orphan rows).
         target_text: Target-language (translated) text, or None when missing.
-        status: Canonical five-state status from `classify_status`.
+        status: Canonical six-state status from `classify_status`.
         provider: Who produced the translation ('claude', 'manual', ...), or None.
         original_target: Target text that shipped with the mod, for the prev-translation hint.
         untranslatable_reason: User-facing reason the row cannot be translated, when applicable.

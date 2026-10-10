@@ -210,7 +210,7 @@ export interface WH3DriftRow {
     status: WH3DriftStatus
     /** Who/what produced the current translation. `null` when untranslated. */
     provider: string | null
-    /** Canonical five-state status (synced/untouched/pending/missing/untranslatable) for the shared status chips. `null` if the backend did not supply it. */
+    /** Canonical six-state status (synced/untouched/pending/changed/missing/untranslatable) for the shared status chips. `null` if the backend did not supply it. */
     canonical_status: RowStatus | null
     /** The on-disk `.loc.tsv` translation text (the previously-synced value), for the prev-translation strikethrough. `null` when none on disk. */
     previous_text: string | null
@@ -222,7 +222,7 @@ export interface WH3RescanSummary {
     mod_id: string
     /** Per-status row counts. */
     counts: Record<WH3DriftStatus, number>
-    /** Zero-filled tally of the canonical five-state model, mirroring each row's `canonical_status`. */
+    /** Zero-filled tally of the canonical six-state model, mirroring each row's `canonical_status`. */
     canonical_counts: Record<RowStatus, number>
     /** ISO timestamp of when the rescan completed. */
     scanned_at: string
