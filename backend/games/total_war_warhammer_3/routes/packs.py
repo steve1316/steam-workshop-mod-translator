@@ -11,10 +11,11 @@ from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 
 from backend import config
-from backend.games.total_war_warhammer_3 import publish_notes
+from backend.games.total_war_warhammer_3 import published_times, publish_notes
 from backend.games.total_war_warhammer_3 import workshop_batch_publisher as wbp
 from backend.games.total_war_warhammer_3 import workshop_publisher as wp
 from backend.games.total_war_warhammer_3.routes._paths import tw3_workshop_content_dir
+from backend.games.total_war_warhammer_3.translation_change_notes import parent_updated_at
 
 router = APIRouter()
 
@@ -63,15 +64,16 @@ def get_pack_preview(workshop_id: str):
 def get_pack_last_modified(workshop_id: str):
     """Return the newest mtime among files inside the local Workshop folder for `workshop_id`.
 
-    Used by the TW3 Dashboard to surface "Updated Nh ago" beneath each pack card. The newest mtime across the
-    folder's files captures the last time the user rebuilt or otherwise touched the pack on disk.
+    Used by the TW3 Dashboard to surface "Rebuilt Nh ago" beneath each pack card. The newest mtime across the
+    folder's files captures the last time the user rebuilt or otherwise touched the pack on disk. Also returns the Steam Workshop
+    `timeupdated` for the item from Steam's manifest, which is when it was last published.
 
     Args:
         workshop_id: Numeric Steam Workshop item id.
 
     Returns:
-        `{"last_modified_unix": float | None}` - the most recent mtime in the folder as a unix timestamp, or
-        `None` when the folder is present but contains no files.
+        `{"last_modified_unix": float | None, "published_unix": float | None}` - the most recent mtime in the folder as a unix timestamp
+        (`None` when the folder has no files), and the Steam `timeupdated` as a unix timestamp (`None` when the manifest lacks the item).
 
     Raises:
         HTTPException(400): When `workshop_id` is not purely numeric.
@@ -91,7 +93,10 @@ def get_pack_last_modified(workshop_id: str):
             if newest is None or mtime > newest:
                 newest = mtime
 
-    return {"last_modified_unix": newest}
+    # Steam's manifest lags behind a fresh upload, so take whichever is newer of it and the time this app recorded.
+    manifest = parent_updated_at([workshop_id])
+    candidates = [t for t in (manifest.timestamp() if manifest else None, published_times.get(workshop_id)) if t is not None]
+    return {"last_modified_unix": newest, "published_unix": max(candidates) if candidates else None}
 
 
 @router.post("/packs/{workshop_id}/open")

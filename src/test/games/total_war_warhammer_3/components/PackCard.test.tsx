@@ -6,7 +6,7 @@ vi.mock("../../../../games/total_war_warhammer_3/components/ScriptRunButton", ()
     default: ({ label }: { label: string }) => <button>{label}</button>,
 }))
 
-import PackCard, { formatUpdatedAgo } from "../../../../games/total_war_warhammer_3/components/PackCard"
+import PackCard, { formatAgo } from "../../../../games/total_war_warhammer_3/components/PackCard"
 
 const BASE_PACK = {
     title: "Nanu's Dynamic RoR Compat",
@@ -65,50 +65,58 @@ describe("PackCard", () => {
         expect(img.src).toContain(`/api/games/total_war_warhammer_3/packs/${BASE_PACK.workshopId}/preview`)
     })
 
-    it("renders an 'Updated Nh ago' subtitle from the last_modified endpoint", async () => {
+    it("renders a 'Rebuilt Nh ago' subtitle from the last_modified endpoint", async () => {
         const nowSeconds = Math.floor(Date.now() / 1000)
         const fiveHoursAgo = nowSeconds - 5 * 3600
         vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ last_modified_unix: fiveHoursAgo }), { status: 200 }))
         render(wrap(<PackCard pack={BASE_PACK} />))
-        await waitFor(() => expect(screen.getByText("Updated 5h ago")).toBeInTheDocument())
+        await waitFor(() => expect(screen.getByText("Rebuilt 5h ago")).toBeInTheDocument())
+    })
+
+    it("renders a 'Published Nh ago' line from published_unix", async () => {
+        const nowSeconds = Math.floor(Date.now() / 1000)
+        vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ last_modified_unix: nowSeconds - 3600, published_unix: nowSeconds - 3 * 3600 }), { status: 200 }))
+        render(wrap(<PackCard pack={BASE_PACK} />))
+        await waitFor(() => expect(screen.getByText("Published 3h ago")).toBeInTheDocument())
+        expect(screen.getByText("Rebuilt 1h ago")).toBeInTheDocument()
     })
 
     it("omits the subtitle when the endpoint returns null", async () => {
         render(wrap(<PackCard pack={BASE_PACK} />))
         await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
-        expect(screen.queryByText(/Updated /)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Rebuilt |Published /)).not.toBeInTheDocument()
     })
 
     it("omits the subtitle when the endpoint returns 404", async () => {
         vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 404 }))
         render(wrap(<PackCard pack={BASE_PACK} />))
         await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled())
-        expect(screen.queryByText(/Updated /)).not.toBeInTheDocument()
+        expect(screen.queryByText(/Rebuilt |Published /)).not.toBeInTheDocument()
     })
 })
 
-describe("formatUpdatedAgo", () => {
+describe("formatAgo", () => {
     it("formats a delta of multiple hours as 'Updated Nh ago'", () => {
         const now = 1_750_000_000_000
-        expect(formatUpdatedAgo(now / 1000 - 5 * 3600, now)).toBe("Updated 5h ago")
-        expect(formatUpdatedAgo(now / 1000 - 23 * 3600, now)).toBe("Updated 23h ago")
+        expect(formatAgo("Updated", now / 1000 - 5 * 3600, now)).toBe("Updated 5h ago")
+        expect(formatAgo("Updated", now / 1000 - 23 * 3600, now)).toBe("Updated 23h ago")
     })
 
     it("switches to day format once the delta hits 24 hours", () => {
         const now = 1_750_000_000_000
-        expect(formatUpdatedAgo(now / 1000 - 24 * 3600, now)).toBe("Updated 1 days ago")
-        expect(formatUpdatedAgo(now / 1000 - Math.round(1.2 * 86400), now)).toBe("Updated 1.2 days ago")
-        expect(formatUpdatedAgo(now / 1000 - 25 * 86400, now)).toBe("Updated 25 days ago")
-        expect(formatUpdatedAgo(now / 1000 - 3021 * 86400, now)).toBe("Updated 3021 days ago")
+        expect(formatAgo("Updated", now / 1000 - 24 * 3600, now)).toBe("Updated 1 days ago")
+        expect(formatAgo("Updated", now / 1000 - Math.round(1.2 * 86400), now)).toBe("Updated 1.2 days ago")
+        expect(formatAgo("Updated", now / 1000 - 25 * 86400, now)).toBe("Updated 25 days ago")
+        expect(formatAgo("Updated", now / 1000 - 3021 * 86400, now)).toBe("Updated 3021 days ago")
     })
 
     it("renders sub-hour deltas as 'Updated <1h ago'", () => {
         const now = 1_750_000_000_000
-        expect(formatUpdatedAgo(now / 1000 - 60, now)).toBe("Updated <1h ago")
+        expect(formatAgo("Updated", now / 1000 - 60, now)).toBe("Updated <1h ago")
     })
 
     it("clamps negative deltas (clock skew) to '<1h ago'", () => {
         const now = 1_750_000_000_000
-        expect(formatUpdatedAgo(now / 1000 + 3600, now)).toBe("Updated <1h ago")
+        expect(formatAgo("Updated", now / 1000 + 3600, now)).toBe("Updated <1h ago")
     })
 })

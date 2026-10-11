@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import AsyncIterator, Callable
 
+from backend.games.total_war_warhammer_3 import published_times
 from backend.games.total_war_warhammer_3.routes._paths import TW3_APPID
 
 
@@ -289,6 +290,11 @@ def _reader_thread(proc: subprocess.Popen, handle: PublishHandle, vdf_path: Path
         _log.append(_LogLine(line=line, ts=datetime.now(timezone.utc)))
         _event_new_line.set()
     proc.wait()
+    if proc.returncode == 0:
+        try:
+            published_times.record(handle.workshop_id)
+        except OSError as exc:
+            _log.append(_LogLine(line=f"Published, but saving the publish time failed: {exc}", ts=datetime.now(timezone.utc)))
     # Run the hook before exit_code is set, since `stream_lines` ends the stream as soon as it sees exit_code.
     if on_exit is not None:
         try:

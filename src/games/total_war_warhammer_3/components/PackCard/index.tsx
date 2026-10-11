@@ -7,23 +7,24 @@ import PublishWorkshopDialog from "../PublishWorkshopDialog"
 import ScriptRunButton from "../ScriptRunButton"
 
 /**
- * Format a unix timestamp as a relative "Updated ... ago" string.
+ * Format a unix timestamp as a relative "<label> ... ago" string.
  *
  * Sub-hour deltas collapse to `"<1h ago"`, deltas under a day stay in whole hours, and anything 24h+ switches to days with a single decimal
  * (trailing `.0` is dropped so whole-day values read cleanly).
  *
- * @param lastModifiedUnix Unix timestamp (seconds) of the last modification.
- * @param nowMs Current epoch time in milliseconds; defaulted to `Date.now()` so tests can inject a fixed clock.
- * @returns A human-readable label such as `"Updated 3h ago"`, `"Updated 1.2 days ago"`, or `"Updated <1h ago"` when the delta is sub-hour.
+ * @param label Prefix such as `"Rebuilt"` or `"Published"`.
+ * @param unix Unix timestamp (seconds) of the event.
+ * @param nowMs Current epoch time in milliseconds, defaulted to `Date.now()` so tests can inject a fixed clock.
+ * @returns A human-readable label such as `"Rebuilt 3h ago"`, `"Published 1.2 days ago"`, or `"Rebuilt <1h ago"` when the delta is sub-hour.
  */
 // eslint-disable-next-line react-refresh/only-export-components
-export function formatUpdatedAgo(lastModifiedUnix: number, nowMs: number = Date.now()): string {
-    const deltaSeconds = Math.max(0, nowMs / 1000 - lastModifiedUnix)
+export function formatAgo(label: string, unix: number, nowMs: number = Date.now()): string {
+    const deltaSeconds = Math.max(0, nowMs / 1000 - unix)
     const hours = Math.floor(deltaSeconds / 3600)
-    if (hours < 1) return "Updated <1h ago"
-    if (hours < 24) return `Updated ${hours}h ago`
+    if (hours < 1) return `${label} <1h ago`
+    if (hours < 24) return `${label} ${hours}h ago`
     const days = parseFloat((deltaSeconds / 86400).toFixed(1))
-    return `Updated ${days} days ago`
+    return `${label} ${days} days ago`
 }
 
 /** A single compat pack card shown on the TW3 Dashboard. */
@@ -58,6 +59,7 @@ interface PackCardProps {
 const PackCardComponent = ({ pack, searchQuery = "" }: PackCardProps) => {
     const [publishOpen, setPublishOpen] = useState(false)
     const [lastModifiedUnix, setLastModifiedUnix] = useState<number | null>(null)
+    const [publishedUnix, setPublishedUnix] = useState<number | null>(null)
     const previewImageUrl = `${API_BASE}/games/total_war_warhammer_3/packs/${pack.workshopId}/preview`
     const workshopUrl = `https://steamcommunity.com/sharedfiles/filedetails/?id=${pack.workshopId}`
 
@@ -69,6 +71,7 @@ const PackCardComponent = ({ pack, searchQuery = "" }: PackCardProps) => {
                 if (cancelled || body == null) return
                 const ts = body.last_modified_unix
                 if (typeof ts === "number") setLastModifiedUnix(ts)
+                if (typeof body.published_unix === "number") setPublishedUnix(body.published_unix)
             })
             .catch(() => {})
         return () => {
@@ -76,7 +79,14 @@ const PackCardComponent = ({ pack, searchQuery = "" }: PackCardProps) => {
         }
     }, [pack.workshopId])
 
-    const subtitle = lastModifiedUnix !== null ? formatUpdatedAgo(lastModifiedUnix) : undefined
+    const subtitle =
+        lastModifiedUnix !== null || publishedUnix !== null ? (
+            <>
+                {lastModifiedUnix !== null && <span title="Last time the local pack files changed on disk">{formatAgo("Rebuilt", lastModifiedUnix)}</span>}
+                {lastModifiedUnix !== null && publishedUnix !== null && <br />}
+                {publishedUnix !== null && <span title="Last time this item was updated on the Steam Workshop">{formatAgo("Published", publishedUnix)}</span>}
+            </>
+        ) : undefined
 
     return (
         <>

@@ -44,7 +44,7 @@ def test_build_vdf_normalises_backslashes_in_content_folder():
 def test_build_vdf_swaps_double_quotes_in_changenote_for_single_quotes():
     # SteamCMD does not honor \" escapes, so a double quote would end the value early and break the parse.
     text = wp.build_vdf("1142710", "12345", Path("C:/mods/foo"), '- Fixed a startup crash ("The first invalid database record").')
-    assert "\t\"changenote\"      \"- Fixed a startup crash ('The first invalid database record').\"\n" in text
+    assert '\t"changenote"      "- Fixed a startup crash (\'The first invalid database record\')."\n' in text
 
 
 def test_build_vdf_keeps_backslashes_in_changenote_literal():
@@ -231,3 +231,14 @@ def test_start_publish_raises_in_progress_while_previous_handle_has_no_exit_code
 
     with pytest.raises(wp.PublishInProgressError):
         wp.start_publish("2", folder, "note", steamcmd_path=str(steamcmd), steam_username="user")
+
+
+def test_reader_thread_records_the_publish_time_only_on_success(tmp_path):
+    from backend.games.total_war_warhammer_3 import published_times
+
+    handle = _handle()
+    wp._reader_thread(_FakeProc([], 1), handle, tmp_path / "x.vdf", None)
+    assert published_times.get(handle.workshop_id) is None
+
+    wp._reader_thread(_FakeProc([], 0), handle, tmp_path / "x.vdf", None)
+    assert published_times.get(handle.workshop_id) is not None

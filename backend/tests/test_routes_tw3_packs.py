@@ -139,7 +139,19 @@ def test_last_modified_returns_newest_mtime_in_folder(monkeypatch, tmp_path):
     _os.utime(newer, (1_750_000_000, 1_750_000_000))
     res = TestClient(app).get("/api/games/total_war_warhammer_3/packs/999/last_modified")
     assert res.status_code == 200
-    assert res.json() == {"last_modified_unix": 1_750_000_000.0}
+    assert res.json() == {"last_modified_unix": 1_750_000_000.0, "published_unix": None}
+
+
+MANIFEST_TEXT = '"AppWorkshop"\n{\n\t"WorkshopItemDetails"\n\t{\n\t\t"999"\n\t\t{\n\t\t\t"timeupdated"\t\t"1750000000"\n\t\t}\n\t}\n}\n'
+
+
+def test_last_modified_returns_published_time_from_manifest(monkeypatch, tmp_path):
+    parent = _set_drive(monkeypatch, tmp_path)
+    (parent / "999").mkdir()
+    manifest = parent.parent.parent / "appworkshop_1142710.acf"
+    manifest.write_text(MANIFEST_TEXT, encoding="utf-8")
+    res = TestClient(app).get("/api/games/total_war_warhammer_3/packs/999/last_modified")
+    assert res.json()["published_unix"] == 1_750_000_000.0
 
 
 def test_last_modified_returns_null_when_folder_empty(monkeypatch, tmp_path):
@@ -147,7 +159,7 @@ def test_last_modified_returns_null_when_folder_empty(monkeypatch, tmp_path):
     (parent / "999").mkdir()
     res = TestClient(app).get("/api/games/total_war_warhammer_3/packs/999/last_modified")
     assert res.status_code == 200
-    assert res.json() == {"last_modified_unix": None}
+    assert res.json() == {"last_modified_unix": None, "published_unix": None}
 
 
 def test_last_modified_returns_404_when_folder_missing(monkeypatch, tmp_path):
@@ -480,3 +492,27 @@ def test_publish_all_skipped_items_do_not_need_a_changenote(monkeypatch, tmp_pat
     )
     assert res.status_code == 200
     assert res.json()["queued"] == 1
+
+
+def test_last_modified_prefers_newer_recorded_publish_time(monkeypatch, tmp_path):
+    from backend.games.total_war_warhammer_3 import published_times
+
+    parent = _set_drive(monkeypatch, tmp_path)
+    (parent / "999").mkdir()
+    manifest = parent.parent.parent / "appworkshop_1142710.acf"
+    manifest.write_text(MANIFEST_TEXT, encoding="utf-8")
+    published_times.record("999", 1_760_000_000.0)
+    res = TestClient(app).get("/api/games/total_war_warhammer_3/packs/999/last_modified")
+    assert res.json()["published_unix"] == 1_760_000_000.0
+
+
+def test_last_modified_keeps_manifest_time_when_newer_than_recorded(monkeypatch, tmp_path):
+    from backend.games.total_war_warhammer_3 import published_times
+
+    parent = _set_drive(monkeypatch, tmp_path)
+    (parent / "999").mkdir()
+    manifest = parent.parent.parent / "appworkshop_1142710.acf"
+    manifest.write_text(MANIFEST_TEXT, encoding="utf-8")
+    published_times.record("999", 1_700_000_000.0)
+    res = TestClient(app).get("/api/games/total_war_warhammer_3/packs/999/last_modified")
+    assert res.json()["published_unix"] == 1_750_000_000.0

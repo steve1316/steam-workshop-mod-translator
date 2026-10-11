@@ -137,3 +137,11 @@ def sample_csv_content():
         "Buff/B_Test_Description,Text,,설명,Description,,描述,描述\n"
         "Skill/S_Slash_Name,Text,,베기,Slash,,斩击,斬擊\n"
     )
+
+
+@pytest.fixture(autouse=True)
+def _isolated_published_times(tmp_path, monkeypatch):
+    """Keep tests from writing publish times into the real storage folder."""
+    from backend.games.total_war_warhammer_3 import published_times
+
+    monkeypatch.setattr(published_times, "_path", lambda: tmp_path / "published_times.json")
