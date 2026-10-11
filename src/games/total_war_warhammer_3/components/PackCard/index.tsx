@@ -91,32 +91,34 @@ const PackCardComponent = ({ pack, searchQuery = "" }: PackCardProps) => {
     return (
         <>
             <WorkshopCard previewImageUrl={previewImageUrl} previewAlt={pack.title} title={highlightMatch(pack.title, searchQuery)} idBadge={pack.workshopId} subtitle={subtitle}>
-                {pack.sharedNote && <p style={{ fontSize: "0.85em", color: "var(--text-dim)", margin: "0.5rem 0" }}>{pack.sharedNote}</p>}
-                <div className="mod-actions" style={{ flexWrap: "nowrap", gap: "0.5rem" }}>
-                    {pack.scriptId ? (
-                        <ScriptRunButton scriptId={pack.scriptId} label="Rebuild" className="btn-compact" />
-                    ) : (
-                        <button type="button" className="btn btn-primary btn-compact" disabled title="No rebuild script associated with this mod">
-                            Rebuild
+                <div className="mod-card-footer">
+                    {pack.sharedNote && <p style={{ fontSize: "0.85em", color: "var(--text-dim)", margin: 0 }}>{pack.sharedNote}</p>}
+                    <div className="mod-actions" style={{ flexWrap: "nowrap", gap: "0.5rem" }}>
+                        {pack.scriptId ? (
+                            <ScriptRunButton scriptId={pack.scriptId} label="Rebuild" className="btn-compact" />
+                        ) : (
+                            <button type="button" className="btn btn-primary btn-compact" disabled title="No rebuild script associated with this mod">
+                                Rebuild
+                            </button>
+                        )}
+                        <button className="btn btn-outline btn-compact" onClick={() => setPublishOpen(true)} title="Push the local pack to the Steam Workshop">
+                            Publish
                         </button>
-                    )}
-                    <button className="btn btn-outline btn-compact" onClick={() => setPublishOpen(true)} title="Push the local pack to the Steam Workshop">
-                        Publish
-                    </button>
-                    <button
-                        type="button"
-                        className="btn btn-outline btn-icon"
-                        onClick={() => {
-                            fetch(`${API_BASE}/games/total_war_warhammer_3/packs/${pack.workshopId}/open`, { method: "POST" }).catch(() => {})
-                        }}
-                        aria-label="Open local pack folder"
-                        title="Open local pack folder"
-                    >
-                        <FaFolderOpen size={18} />
-                    </button>
-                    <a href={workshopUrl} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-icon" aria-label="Open Steam workshop page" title="Open Steam workshop page">
-                        <FaSteam size={20} />
-                    </a>
+                        <button
+                            type="button"
+                            className="btn btn-outline btn-icon"
+                            onClick={() => {
+                                fetch(`${API_BASE}/games/total_war_warhammer_3/packs/${pack.workshopId}/open`, { method: "POST" }).catch(() => {})
+                            }}
+                            aria-label="Open local pack folder"
+                            title="Open local pack folder"
+                        >
+                            <FaFolderOpen size={18} />
+                        </button>
+                        <a href={workshopUrl} target="_blank" rel="noopener noreferrer" className="btn btn-outline btn-icon" aria-label="Open Steam workshop page" title="Open Steam workshop page">
+                            <FaSteam size={20} />
+                        </a>
+                    </div>
                 </div>
             </WorkshopCard>
             {publishOpen && <PublishWorkshopDialog workshopId={pack.workshopId} title={pack.title} onClose={() => setPublishOpen(false)} />}
