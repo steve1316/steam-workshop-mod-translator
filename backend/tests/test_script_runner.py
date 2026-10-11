@@ -186,3 +186,35 @@ def test_cancel_run_idempotent_when_idle():
 def test_unknown_script_id_raises():
     with pytest.raises(UnknownScriptError):
         start_run("does_not_exist", _settings(), registry=_TEST_SCRIPT_REGISTRY)
+
+
+def test_stream_lines_keeps_streaming_after_the_bounded_log_fills(monkeypatch):
+    import asyncio
+    import threading
+    from collections import deque
+    from datetime import datetime, timezone
+
+    handle = sr.RunHandle(run_id="r", script_id="s", started_at=datetime.now(timezone.utc))
+    monkeypatch.setattr(sr, "_current", handle)
+    monkeypatch.setattr(sr, "_log", deque(maxlen=5))
+
+    def produce():
+        for seq in range(40):
+            sr._log.append(sr._LogLine(line=f"line {seq}", ts=datetime.now(timezone.utc), seq=seq))
+            sr._event_new_line.set()
+            time.sleep(0.01)
+        handle.exit_code = 0
+        handle.ended_at = datetime.now(timezone.utc)
+        sr._event_new_line.set()
+
+    async def collect():
+        return [evt async for evt in sr.stream_lines()]
+
+    thread = threading.Thread(target=produce)
+    thread.start()
+    events = asyncio.run(collect())
+    thread.join()
+
+    lines = [e["line"] for e in events if e["event"] == "data"]
+    assert lines == [f"line {n}" for n in range(40)]
+    assert events[-1]["event"] == "done"

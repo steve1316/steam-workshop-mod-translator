@@ -94,6 +94,8 @@ class _LogLine:
     """ The raw text line captured from subprocess stdout. """
     ts: datetime
     """ UTC timestamp at which the line was captured. """
+    seq: int = 0
+    """ Position of the line within its run, counting from 0. Keeps climbing after the bounded buffer starts dropping old lines. """
 
 
 class RunnerError(Exception):
@@ -276,9 +278,9 @@ def _reader_thread(proc: subprocess.Popen, handle: RunHandle) -> None:
         handle: The `RunHandle` to update on exit.
     """
     assert proc.stdout is not None
-    for raw in proc.stdout:
+    for seq, raw in enumerate(proc.stdout):
         line = raw.rstrip("\n")
-        _log.append(_LogLine(line=line, ts=datetime.now(timezone.utc)))
+        _log.append(_LogLine(line=line, ts=datetime.now(timezone.utc), seq=seq))
         _event_new_line.set()
     proc.wait()
     handle.exit_code = proc.returncode
@@ -325,15 +327,17 @@ async def stream_lines() -> AsyncIterator[dict]:
         yield {"event": "done", "exit_code": None}
         return
 
-    seen = 0
+    # Track the last sent sequence number rather than a buffer index. The buffer is bounded, so an index stops advancing once it fills.
+    last_seq = -1
     started = handle.started_at
     while True:
         snapshot = list(_log)
-        for entry in snapshot[seen:]:
-            yield {"event": "data", "line": entry.line, "ts": entry.ts.isoformat()}
-        seen = len(snapshot)
+        for entry in snapshot:
+            if entry.seq > last_seq:
+                yield {"event": "data", "line": entry.line, "ts": entry.ts.isoformat()}
+                last_seq = entry.seq
 
-        if handle.exit_code is not None and seen >= len(_log):
+        if handle.exit_code is not None and (not _log or _log[-1].seq <= last_seq):
             duration = (handle.ended_at - started).total_seconds() if handle.ended_at else 0.0
             yield {"event": "done", "exit_code": handle.exit_code, "duration_seconds": duration}
             return
