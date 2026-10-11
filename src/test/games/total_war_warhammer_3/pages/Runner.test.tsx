@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import RunnerPage from "../../../../games/total_war_warhammer_3/pages/Runner"
 import { _resetUseRunnerLogForTests } from "../../../../games/total_war_warhammer_3/hooks/useRunnerLog"
+import { _resetUseCurrentRunForTests } from "../../../../games/total_war_warhammer_3/hooks/useCurrentRun"
 
 class FakeEventSource {
     static instances: FakeEventSource[] = []
@@ -41,6 +42,7 @@ beforeEach(() => {
     FakeEventSource.instances = []
     ;(globalThis as unknown as { EventSource: typeof FakeEventSource }).EventSource = FakeEventSource
     _resetUseRunnerLogForTests()
+    _resetUseCurrentRunForTests()
     vi.spyOn(globalThis, "fetch").mockImplementation((url: unknown) => {
         const urlStr = String(url)
         if (urlStr.includes("/translation/mods")) {
@@ -154,5 +156,24 @@ describe("Runner page", () => {
         expect(card).toHaveTextContent("Yet Another Tabletop Caps")
         await userEvent.setup().click(within(card).getByRole("button", { name: /^run$/i }))
         await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/run/update_ttc_compat"), expect.objectContaining({ method: "POST" })))
+    })
+
+    it("shows each pipeline step's progress on its card while update runs and returns to Run afterwards", async () => {
+        const steps = { update_dynamic_rors: "done", update_dynamic_rors_vanilla: "running", process_main_units_tables: "skipped", update_ttc_compat: "queued" }
+        let state: object = { status: "running", run_id: "x", script_id: "update", started_at: new Date().toISOString(), lines_emitted: 0, steps }
+        vi.mocked(globalThis.fetch).mockImplementation(() => Promise.resolve(new Response(JSON.stringify(state), { status: 200 })))
+        render(wrap(<RunnerPage />))
+        const cardFor = async (name: string) => (await screen.findByRole("heading", { name })).closest(".script-card") as HTMLElement
+        await waitFor(async () => expect(within(await cardFor("Dynamic RoR (default)")).getByRole("status")).toHaveTextContent("Done"))
+        expect(within(await cardFor("Dynamic RoR (--vanilla)")).getByRole("status")).toHaveTextContent("In-Progress...")
+        expect(within(await cardFor("Land Encounters")).getByRole("status")).toHaveTextContent("Up to date")
+        expect(within(await cardFor("Tabletop Caps Compat")).getByRole("status")).toHaveTextContent("Waiting...")
+        expect(within(await cardFor("GLF Battle Mage")).getByRole("button", { name: /^run$/i })).toBeDisabled()
+        expect(within(await cardFor("Update")).getByRole("button", { name: /cancel/i })).toBeInTheDocument()
+
+        // The shared poll is already running, so the idle state lands on its next tick.
+        state = { status: "idle" }
+        await waitFor(() => expect(screen.getAllByRole("button", { name: /^run$/i })).toHaveLength(8), { timeout: 3000 })
+        expect(screen.queryByRole("status")).not.toBeInTheDocument()
     })
 })

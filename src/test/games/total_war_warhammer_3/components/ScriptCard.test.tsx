@@ -32,4 +32,12 @@ describe("ScriptCard", () => {
         await userEvent.setup().click(screen.getByRole("button", { name: /^run$/i }))
         expect(onRun).toHaveBeenCalledWith(SCRIPT.id)
     })
+
+    it("replaces the Run button with a step indicator while the pipeline runs", () => {
+        const { rerender } = render(<ScriptCard script={SCRIPT} running={false} disabled={true} step="running" onRun={vi.fn()} onCancel={vi.fn()} />)
+        expect(screen.queryByRole("button", { name: /^run$/i })).not.toBeInTheDocument()
+        expect(screen.getByRole("status")).toHaveTextContent("In-Progress...")
+        rerender(<ScriptCard script={SCRIPT} running={false} disabled={true} step="done" onRun={vi.fn()} onCancel={vi.fn()} />)
+        expect(screen.getByRole("status")).toHaveTextContent("Done")
+    })
 })

@@ -476,6 +476,44 @@ a:not([class]):hover {
     flex-grow: 1;
 }
 
+/* Stands in for a Run button while the update pipeline runs. Chained with .btn to win over .btn-outline. */
+.btn.step-indicator {
+    cursor: default;
+    pointer-events: none;
+    color: var(--text-dim);
+}
+
+.step-indicator__spinner {
+    width: 0.9em;
+    height: 0.9em;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.step-indicator--queued .step-indicator__spinner {
+    opacity: 0.5;
+    animation-duration: 2.4s;
+}
+
+/* Fixed blue rather than the game accent, which is red on WH3 and would read as Failed. */
+.btn.step-indicator--running {
+    color: var(--accent-primary);
+    border-color: rgba(56, 189, 248, 0.6);
+    box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
+.btn.step-indicator--done {
+    color: var(--success);
+    border-color: rgba(16, 185, 129, 0.5);
+}
+
+.btn.step-indicator--failed {
+    color: var(--danger);
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
 /* //////////////////////////////////////////////////////////////////////////////////////////////// */
 /* //////////////////////////////////////////////////////////////////////////////////////////////// */
 /* Settings (src/pages/Settings) */

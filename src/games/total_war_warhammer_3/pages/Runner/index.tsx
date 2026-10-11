@@ -60,7 +60,7 @@ interface DoneEvent {
 }
 
 /**
- * TW3 Runner page. Renders a grid of `ScriptCard` instances and a persistent `RunnerLogTerminal` below. Starting a run appends a separator into the shared log; the active card swaps Run for Cancel and siblings disable. SSE lines append into the same shared log as data entries, with a closing separator on `done`.
+ * TW3 Runner page. Renders a grid of `ScriptCard` instances and a persistent `RunnerLogTerminal` below. Starting a run appends a separator into the shared log; the active card swaps Run for Cancel and siblings disable. During the `update` pipeline, each script it rebuilds shows its progress instead. SSE lines append into the same shared log as data entries, with a closing separator on `done`.
  *
  * @returns The Runner page composition.
  */
@@ -133,13 +133,22 @@ export default function RunnerPage() {
     }
 
     const runningScriptId = run.status === "running" ? run.script_id : null
+    const steps = run.status === "running" ? run.steps : undefined
 
     return (
         <div className="page-fill">
             <PageHeader title="Runner" meta={<p>Run any of the helper_scripts/update_*.py scripts. Output accumulates in the terminal below across runs.</p>} />
             <div className="mod-grid">
                 {SCRIPTS.map((s) => (
-                    <ScriptCard key={s.id} script={s} running={runningScriptId === s.id} disabled={runningScriptId !== null && runningScriptId !== s.id} onRun={handleStart} onCancel={handleCancel} />
+                    <ScriptCard
+                        key={s.id}
+                        script={s}
+                        running={runningScriptId === s.id}
+                        disabled={runningScriptId !== null && runningScriptId !== s.id}
+                        step={steps?.[s.id]}
+                        onRun={handleStart}
+                        onCancel={handleCancel}
+                    />
                 ))}
             </div>
             <RunnerLogTerminal fill />

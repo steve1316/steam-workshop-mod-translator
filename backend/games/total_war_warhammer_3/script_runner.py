@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -58,12 +59,45 @@ SCRIPT_REGISTRY: dict[str, ScriptDef] = {
     "update": ScriptDef(filename="update.py"),
 }
 
+PIPELINE_SCRIPT_ID = "update"
+""" Registry key of the top-level pipeline whose per-script progress is tracked in `RunHandle.steps`. """
+
+# Each `update.py` delta unit name mapped to the registry script that rebuilds the same pack on its own.
+PIPELINE_UNIT_SCRIPTS: dict[str, str] = {
+    "land_encounters_factions": "process_main_units_tables",
+    "dynamic_rors": "update_dynamic_rors",
+    "dynamic_rors_leftover_vanilla": "update_dynamic_rors_vanilla",
+    "modified_attributes": "update_modified_attribute_mods",
+    "double_unit_size": "update_double_unit_size",
+    "ttc_compat": "update_ttc_compat",
+}
+
 
 class RunStatus(str, Enum):
     """Lifecycle state of the runner."""
 
     IDLE = "idle"
     RUNNING = "running"
+
+
+class StepStatus(str, Enum):
+    """Progress of one script inside a pipeline run."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    DONE = "done"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+# `update.py` log messages that move a unit to a new status. Group 1 is the delta unit name.
+_STEP_PATTERNS: list[tuple[re.Pattern[str], StepStatus]] = [
+    (re.compile(r"Rebuilding (\w+): "), StepStatus.RUNNING),
+    (re.compile(r"(\w+): up to date\s*$"), StepStatus.SKIPPED),
+    (re.compile(r"(\w+) exited with code "), StepStatus.FAILED),
+]
+# Logged once every rebuild has finished, so the last running unit is done.
+_PIPELINE_SUMMARY_MARKER = "Delta update summary"
 
 
 @dataclass
@@ -84,6 +118,8 @@ class RunHandle:
     """ UTC timestamp when the subprocess exited. `None` while still running. """
     exit_code: int | None = None
     """ Return code from the subprocess. `None` while still running. """
+    steps: dict[str, StepStatus] = field(default_factory=dict)
+    """ Per-script progress of a pipeline run, keyed by registry script id. Empty for every other run. """
 
 
 @dataclass
@@ -261,6 +297,8 @@ def start_run(
             script_id=script_id,
             started_at=datetime.now(timezone.utc),
         )
+        if script_id == PIPELINE_SCRIPT_ID:
+            handle.steps = {sid: StepStatus.QUEUED for sid in PIPELINE_UNIT_SCRIPTS.values()}
         _current = handle
         _proc = proc
         _log.clear()
@@ -268,6 +306,40 @@ def start_run(
 
     threading.Thread(target=_reader_thread, args=(proc, handle), daemon=True).start()
     return handle
+
+
+def _finish_running_step(handle: RunHandle) -> None:
+    """Mark the pipeline step that is currently running as done.
+
+    Args:
+        handle: The pipeline `RunHandle` whose steps to update.
+    """
+    for script_id, status in handle.steps.items():
+        if status is StepStatus.RUNNING:
+            handle.steps[script_id] = StepStatus.DONE
+
+
+def _track_step(handle: RunHandle, line: str) -> None:
+    """Update the pipeline step statuses from one `update.py` log line. No-op for runs that track no steps.
+
+    Args:
+        handle: The `RunHandle` of the active run.
+        line: One captured stdout line.
+    """
+    if not handle.steps:
+        return
+    if _PIPELINE_SUMMARY_MARKER in line:
+        _finish_running_step(handle)
+        return
+    for pattern, status in _STEP_PATTERNS:
+        match = pattern.search(line)
+        script_id = PIPELINE_UNIT_SCRIPTS.get(match.group(1)) if match else None
+        if script_id is None:
+            continue
+        if status is StepStatus.RUNNING:
+            _finish_running_step(handle)
+        handle.steps[script_id] = status
+        return
 
 
 def _reader_thread(proc: subprocess.Popen, handle: RunHandle) -> None:
@@ -281,6 +353,7 @@ def _reader_thread(proc: subprocess.Popen, handle: RunHandle) -> None:
     for seq, raw in enumerate(proc.stdout):
         line = raw.rstrip("\n")
         _log.append(_LogLine(line=line, ts=datetime.now(timezone.utc), seq=seq))
+        _track_step(handle, line)
         _event_new_line.set()
     proc.wait()
     handle.exit_code = proc.returncode

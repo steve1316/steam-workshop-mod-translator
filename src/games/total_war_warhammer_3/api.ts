@@ -22,6 +22,9 @@ export interface SupportedMod {
     [key: string]: unknown
 }
 
+/** Progress of one script inside an `update` pipeline run. */
+export type StepStatus = "queued" | "running" | "done" | "skipped" | "failed"
+
 /** Represents a run that is currently active. */
 export interface RunStateRunning {
     /** Discriminant. */
@@ -34,6 +37,8 @@ export interface RunStateRunning {
     started_at: string
     /** Number of log lines emitted so far. */
     lines_emitted: number
+    /** Per-script progress of an `update` pipeline run, keyed by script id. Empty for every other run. */
+    steps: Record<string, StepStatus>
 }
 
 /** Represents the state when no run is active. */

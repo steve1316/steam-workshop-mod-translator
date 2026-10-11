@@ -32,7 +32,7 @@ def get_run():
 
     Returns:
         `{"status": "idle"}` if no run is active. Otherwise a dict with
-        `status`, `run_id`, `script_id`, `started_at`, and `lines_emitted`.
+        `status`, `run_id`, `script_id`, `started_at`, `lines_emitted`, and `steps` (per-script progress of a pipeline run).
     """
     handle = sr.current_run()
     if sr.is_idle() or handle is None:
@@ -43,6 +43,7 @@ def get_run():
         "script_id": handle.script_id,
         "started_at": handle.started_at.isoformat(),
         "lines_emitted": len(sr._log),
+        "steps": {script_id: status.value for script_id, status in handle.steps.items()},
     }
 
 
