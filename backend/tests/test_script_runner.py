@@ -85,6 +85,13 @@ def test_preflight_fails_when_rpfm_missing(tmp_path):
     assert any("rpfm_cli" in m for m in exc.value.missing)
 
 
+def test_preflight_passes_without_generated_schema_json(tmp_path):
+    (tmp_path / "schemas").mkdir()
+    (tmp_path / "schemas" / "schema_wh3.ron").write_text("")
+    (tmp_path / "rpfm_cli.exe").write_text("")
+    assert _preflight(_settings(helper=tmp_path)) == tmp_path
+
+
 def test_preflight_fails_when_steam_drive_unset():
     with pytest.raises(PreflightError) as exc:
         _preflight(_settings(drive=""))

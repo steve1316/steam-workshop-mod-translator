@@ -163,11 +163,10 @@ def _preflight(settings: dict) -> Path:
     if not rpfm or not rpfm.is_file():
         missing.append(f"rpfm_cli at {rpfm}" if rpfm else "rpfm_cli_path")
 
+    # Only the .ron is required. The helper scripts regenerate schema_wh3.json from it on startup.
     if helper and helper.is_dir():
         if not (helper / "schemas" / "schema_wh3.ron").is_file():
             missing.append("schemas/schema_wh3.ron")
-        if not (helper / "schemas" / "schema_wh3.json").is_file():
-            missing.append("schemas/schema_wh3.json")
 
     if not (settings.get("steam_library_drive") or ""):
         missing.append("steam_library_drive")
